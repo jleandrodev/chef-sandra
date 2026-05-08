@@ -1,0 +1,131 @@
+{
+  "date": "2026-05-07",
+  "summary_pt": "Hoje tivemos um total de 10 novos leads, mas 9 foram considerados atípicos, evidenciando um dia com muitos leads em situações não convencionais ou sem clareza. O único pagamento confirmado foi de um lead, enquanto 3 abandonaram por questões de preço. As interações mostraram uma predominância de leads buscando receitas acessíveis e saudáveis para diabetes, com objeções consistentes relacionadas ao custo e métodos de pagamento. A média de mensagens por lead foi de 5,64, indicando um esforço significativo para engajar os leads, embora a maioria esteja em progresso sem decisões claras.",
+  "profile_clusters": [
+    {
+      "canonical_slug": "diabetico-busca-receitas",
+      "label": "Diabético em busca de receitas",
+      "core_pain": "Desejo de comer alimentos saborosos sem prejudicar a saúde.",
+      "evidence_slugs_seen": [
+        "diabetico-busca-receitas",
+        "diabeticos",
+        "diabetica-busca-recetas"
+      ],
+      "evidence_lead_ids": [
+        "wa_5492216259644",
+        "wa_554497317509",
+        "wa_59894012509"
+      ],
+      "draft_profile_md": "# CONTEXTO (PT-BR — não vai pro prompt)\n\n**Label:** Diabético em busca de receitas\n**Dor central:** Desejo de comer alimentos saborosos sem prejudicar a saúde.\n**Drivers de decisão:** [Necessidade de receitas que atendam à dieta, Desejo de prazer na alimentação]\n**Blockers de decisão:** []\n**Hipótese:** O produto oferece receitas que atendem às necessidades alimentares dos diabéticos, permitindo que desfrutem da comida sem riscos à saúde.\n\n# DIRETIVAS (ES — vai pro prompt da Chef Sandra)\n\n**Cuando detectes que el lead encaja en este perfil, ajusta tu enfoque así:**\n\n- En PASO 3 (conexión): valida específicamente el deseo de comer alimentos sabrosos con frases como \"¿Qué es lo que más extrañas comer?\".\n- En PASO 4 (presentación): destaca primero las recetas de pan y postres porque son las más buscadas por los diabéticos.\n- En PASO 5 (precio): enmarca el valor como \"Por menos de lo que gastas en una consulta nutricional, tendrás acceso a más de 50 recetas probadas que son fáciles de hacer y deliciosas.\"\n- Lenguaje preferido: informal, utiliza emojis.\n- Evita: abordagens muito formais ou que não reconheçam a dor do lead."
+    }
+  ],
+  "objection_patterns": [
+    {
+      "category": "objection_price_hard",
+      "occurrences": 5,
+      "evidence": [
+        {
+          "lead_id": "wa_5493515057274",
+          "quote": "No te puedo pagar ahora"
+        },
+        {
+          "lead_id": "wa_59896402480",
+          "quote": "Pero como hago para pagar"
+        },
+        {
+          "lead_id": "wa_59898037335",
+          "quote": "no tengo $.. ni.pa ccomer meno.pa reseta"
+        },
+        {
+          "lead_id": "wa_59898828482",
+          "quote": "soy jubilada y no tengo así como para gastar tanto"
+        },
+        {
+          "lead_id": "wa_56945579173",
+          "quote": "sinceramente yo, no estoy en condiciones de pagar una fortuna"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el precio puede ser una preocupación. Por eso, quiero que sepas que puedes elegir el valor que quieras pagar, para que el dinero no sea un obstáculo 💚."
+    },
+    {
+      "category": "objection_payment_method",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59896402480",
+          "quote": "Pero como hago para pagar"
+        },
+        {
+          "lead_id": "wa_5978351875",
+          "quote": "no tengo tarjeta de crédito"
+        },
+        {
+          "lead_id": "wa_5926872058",
+          "quote": "Es pix of es prex"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el proceso de pago puede ser confuso. Estoy aquí para ayudarte a aclarar cualquier duda y facilitarte la compra."
+    }
+  ],
+  "what_works_repeated": [
+    {
+      "agent_phrase_pattern": "no quiero que el dinero sea un obstáculo",
+      "occurrences": 4,
+      "evidence": [
+        {
+          "lead_id": "wa_5493758566220",
+          "agent_phrase": "No quiero que el dinero sea un obstáculo 💚",
+          "lead_reaction": "No te puedo pagar ahora"
+        },
+        {
+          "lead_id": "wa_59896402480",
+          "agent_phrase": "Nidia, no quiero que el dinero sea un obstáculo 💚",
+          "lead_reaction": "A.no pense era gratis..no tengo $.. ni.pa ccomer meno.pa reseta..perdon"
+        },
+        {
+          "lead_id": "wa_56945579173",
+          "agent_phrase": "no quiero que el dinero sea un obstáculo 💚",
+          "lead_reaction": "Sí, por favor. Muchas gracias."
+        },
+        {
+          "lead_id": "wa_59898828482",
+          "agent_phrase": "No quiero que el dinero sea un obstáculo 💚",
+          "lead_reaction": "Muchísimas gracias igual."
+        }
+      ],
+      "principle": "Cialdini reciprocidade"
+    }
+  ],
+  "what_fails_repeated": [
+    {
+      "agent_phrase_pattern": "¿Con qué valor te gustaría adquirirlos?",
+      "occurrences": 4,
+      "evidence": [
+        {
+          "lead_id": "wa_59898037335",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos, Nidia?",
+          "lead_reaction": "A.no pense era gratis..no tengo $.. ni.pa ccomer meno.pa reseta..perdon"
+        },
+        {
+          "lead_id": "wa_5492216259644",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos, Ana Maria?",
+          "lead_reaction": "No te puedo pagar ahora"
+        },
+        {
+          "lead_id": "wa_59892955490",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos, Susana?",
+          "lead_reaction": "En pesos uruguayo"
+        },
+        {
+          "lead_id": "wa_56979547504",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos, Carmen?",
+          "lead_reaction": ""
+        }
+      ],
+      "hypothesis": "Os leads demonstram insegurança sobre o preço e não estão prontos para discutir valores antes de entender o produto."
+    }
+  ],
+  "anomalies": [
+    "Uma alta incidência de leads atípicos (9 de 39), possivelmente devido a fatores externos ou campanhas inadequadas."
+  ]
+}

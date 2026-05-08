@@ -1,0 +1,102 @@
+{
+  "date": "2026-05-04",
+  "summary_pt": "Hoje, tivemos 15 novos leads, mas 7 deles foram considerados atípicos. O número de leads em andamento é alto (9), enquanto 2 leads abandonaram o contato devido ao preço. Os perfis dominantes incluem aqueles que buscam receitas para diabéticos, como 'Diabético que ama pão' e 'Buscadora de receitas para diabéticos'. As objeções mais frequentes estão relacionadas ao preço, com 3 leads expressando dificuldades financeiras. A comunicação deve ser ajustada para abordar essas questões de forma mais sensível e empática.",
+  "profile_clusters": [
+    {
+      "canonical_slug": "diabetico-que-busca-receitas",
+      "label": "Diabético em busca de receitas",
+      "core_pain": "Dificuldade em encontrar receitas seguras e saborosas para diabetes.",
+      "evidence_slugs_seen": [
+        "diabetico-que-busca-receitas",
+        "diabetico-busca-receitas"
+      ],
+      "evidence_lead_ids": [
+        "wa_593990640790",
+        "wa_59891792170"
+      ],
+      "draft_profile_md": "# CONTEXTO (PT-BR — não vai pro prompt)\n\n**Label:** Diabético em busca de receitas\n**Dor central:** Dificuldade em encontrar receitas seguras e saborosas para diabetes.\n**Drivers de decisão:** Necessidade de receitas específicas para diabetes, Desejo de manter uma alimentação saborosa.\n**Blockers de decisão:** N/A\n**Hipótese:** O produto oferece receitas que atendem às necessidades alimentares dos diabéticos, permitindo que aproveitem a comida que gostam.\n\n# DIRETIVAS (ES — vai pro prompt da Chef Sandra)\n\n**Cuando detectes que el lead encaja en este perfil, ajusta tu enfoque así:**\n\n- En PASO 3 (conexión): valida específicamente el deseo de recetas seguras con frases como \"Entiendo perfectamente, muchas personas con diabetes sienten lo mismo al extrañar la harina.\"\n- En PASO 4 (presentación): destaca primero las recetas que incluyen harina, porque esto aborda una necesidad central del lead.\n- En PASO 5 (precio): enmarca el valor como \"Te ofrezco alternativas accesibles que se adaptan a tu situación.\"\n- Lenguaje preferido: informal, con emojis, y empatía.\n- Evita: mencionar preços elevados sem considerar a situação financeira do lead."
+    }
+  ],
+  "objection_patterns": [
+    {
+      "category": "objection_price_hard",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_5926490578",
+          "quote": "No tengo dinero yo no trabajo gracias"
+        },
+        {
+          "lead_id": "wa_593992923873",
+          "quote": "No muchas gracias"
+        },
+        {
+          "lead_id": "wa_59176410801",
+          "quote": "Si pero aquí en Bolivia el dólar está muy caro"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el precio puede ser una preocupación. Muchas personas están en situaciones similares. Podemos explorar opciones que se ajusten a tu presupuesto."
+    },
+    {
+      "category": "objection_email",
+      "occurrences": 2,
+      "evidence": [
+        {
+          "lead_id": "wa_59894997608",
+          "quote": "No tengo himail"
+        },
+        {
+          "lead_id": "wa_56995684671",
+          "quote": "Cobras por la receta?"
+        }
+      ],
+      "draft_rebuttal_es": "Comprendo que no tengas acceso a email. Podemos encontrar una manera alternativa para que recibas la información que necesitas."
+    }
+  ],
+  "what_works_repeated": [
+    {
+      "agent_phrase_pattern": "Entiendo, [nome]. Muchas personas con diabetes sienten [dor similar].",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_595984488457",
+          "agent_phrase": "Entiendo, Frede. El pan es un alimento que muchos extrañan.",
+          "lead_reaction": "Me parece espectacular."
+        },
+        {
+          "lead_id": "wa_59894997608",
+          "agent_phrase": "Entiendo, Neusa. Muchas personas con diabetes sienten la dificultad de encontrar recetas seguras y deliciosas.",
+          "lead_reaction": "Si me gustaria."
+        },
+        {
+          "lead_id": "wa_593998089080",
+          "agent_phrase": "Entiendo perfectamente, Catalina. Muchas personas con diabetes sienten lo mismo al extrañar la harina.",
+          "lead_reaction": "Lo que deseo saber es el costo porfavor."
+        }
+      ],
+      "principle": "Cialdini empatia"
+    }
+  ],
+  "what_fails_repeated": [
+    {
+      "agent_phrase_pattern": "Aquí tienes el link para acceder a la colección de recetas",
+      "occurrences": 2,
+      "evidence": [
+        {
+          "lead_id": "wa_59894997608",
+          "agent_phrase": "Aquí tienes el link para acceder a la colección de recetas: https://pay.kiwify.com/r3IgdNa",
+          "lead_reaction": "No tengo himail"
+        },
+        {
+          "lead_id": "wa_593992923873",
+          "agent_phrase": "El valor de la colección de recetas es de $9.90 dólares",
+          "lead_reaction": "No muchas gracias"
+        }
+      ],
+      "hypothesis": "A falta de adaptação da oferta para leads sem email e preocupados com preço está dificultando a conversão."
+    }
+  ],
+  "anomalies": [
+    "30% dos leads foram considerados atípicos, o que pode indicar tráfego ruim ou problemas na campanha."
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "date": "2026-05-06",
+  "summary_pt": "Hoje, tivemos um total de 13 novos leads, mas 12 foram classificados como atípicos, indicando uma possível anomalia na qualidade do tráfego. Entre os leads, 2 confirmaram pagamento, mas muitos abandonaram devido a objeções relacionadas a preço e métodos de pagamento. As principais objeções incluíram a dificuldade em encontrar receitas acessíveis e a falta de confiança em compras online, refletindo um padrão claro de preocupação com custos e métodos de pagamento. O engajamento dos leads foi moderado, mas as respostas aos agentes variaram bastante, com algumas abordagens gerando interesse e outras resultando em silêncios ou respostas negativas.",
+  "profile_clusters": [
+    {
+      "canonical_slug": "diabetico-em-busca-de-receitas",
+      "label": "Diabético em busca de receitas",
+      "core_pain": "Desejo de comer alimentos saborosos e saudáveis sem comprometer a saúde devido à diabetes.",
+      "evidence_slugs_seen": [
+        "diabetico-em-busca-de-receitas",
+        "diabetico-busca-recetas"
+      ],
+      "evidence_lead_ids": [
+        "wa_593998089080",
+        "wa_595984488457",
+        "wa_554497317509"
+      ],
+      "draft_profile_md": "# CONTEXTO (PT-BR — não vai pro prompt)\n\n**Label:** Diabético em busca de receitas\n**Dor central:** Desejo de comer alimentos saborosos e saudáveis sem comprometer a saúde devido à diabetes.\n**Drivers de decisão:** [necessidade de receitas seguras, saudabilidade, sabor]\n**Blockers de decisão:** [preço, falta de confiança no conteúdo]\n**Hipótese:** O produto oferece receitas que atendem às necessidades de saúde e sabor dos diabéticos.\n\n# DIRETIVAS (ES — vai pro prompt da Chef Sandra)\n\n**Cuando detectes que el lead encaja en este perfil, ajusta tu enfoque así:**\n\n- En PASO 3 (conexión): valida específicamente el deseo de comidas sabrosas con frases como \"Entiendo que quieres seguir disfrutando de tus comidas favoritas, pero de manera saludable\".\n- En PASO 4 (presentación): destaca primero las recetas para panes y postres porque son comunes en la dieta de diabéticos.\n- En PASO 5 (precio): enmarca el valor como \"Tú eliges cuánto deseas contribuir, para que sea accesible para ti\".\n- Lenguaje preferido: informal, amigável, utiliza emojis.\n- Evita: abordar o preço antes de estabelecer conexão emocional."
+    }
+  ],
+  "objection_patterns": [
+    {
+      "category": "objection_price_hard",
+      "occurrences": 4,
+      "evidence": [
+        {
+          "lead_id": "wa_34632026461",
+          "quote": "No ya es mucho para mi no dispongo dinero yo trabajo"
+        },
+        {
+          "lead_id": "wa_573144604892",
+          "quote": "Disculpe pero en el momento no tengo dinero gracias"
+        },
+        {
+          "lead_id": "wa_59899449940",
+          "quote": "no lo dejo sin efecto xq vivo en el campo y hago lo que puedo.soy jubilada y me arreglo con lo que veo x acá.gracias 😘"
+        },
+        {
+          "lead_id": "wa_59177569500",
+          "quote": "En este momento no puedo pagar ese valor 😔"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el precio puede ser un obstáculo, pero quiero que sepas que hay flexibilidad en la contribución. ¿Qué valor te sentirías cómodo pagando?"
+    },
+    {
+      "category": "objection_payment_method",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59899099113",
+          "quote": "yo no trabajo con tarjeta ni nada yo xsilo enviando Abitab o Redpagos sino no puedo"
+        },
+        {
+          "lead_id": "wa_59177569500",
+          "quote": "no manejo QR, habrá otra opción?"
+        },
+        {
+          "lead_id": "wa_593987242655",
+          "quote": "cuanto seria en pesos uruguayos"
+        }
+      ],
+      "draft_rebuttal_es": "Comprendo que los métodos de pago son importantes. Te ofrezco alternativas que pueden facilitar la transacción. ¿Te gustaría que te explique?"
+    },
+    {
+      "category": "objection_trust",
+      "occurrences": 2,
+      "evidence": [
+        {
+          "lead_id": "wa_56994924217",
+          "quote": "ya no me gusto yo compre un libro para escurtir verdura e me senti engañada"
+        },
+        {
+          "lead_id": "wa_59894805140",
+          "quote": "como.es el pago por donde viste que hay mucha estafa"
+        }
+      ],
+      "draft_rebuttal_es": "Lamento que hayas tenido malas experiencias. Quiero asegurarte que mis recetas son seguras y confiables. ¿Te gustaría ver testimonios de otros clientes?"
+    }
+  ],
+  "what_works_repeated": [
+    {
+      "agent_phrase_pattern": "no quiero que el dinero sea un obstáculo",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59899099113",
+          "agent_phrase": "no quiero que el dinero sea un obstáculo para ti.",
+          "lead_reaction": "me jubilaron alos 56 con la mínima y tomo mucho medicamento"
+        },
+        {
+          "lead_id": "wa_573144604892",
+          "agent_phrase": "no quiero que el dinero sea un obstáculo para que accedas a las recetas.",
+          "lead_reaction": "Disculpe pero en el momento no tengo dinero gracias"
+        },
+        {
+          "lead_id": "wa_59894805140",
+          "agent_phrase": "no quiero que el dinero sea un obstáculo.",
+          "lead_reaction": "Gracias por su atención."
+        }
+      ],
+      "principle": "Cialdini reciprocidade"
+    }
+  ],
+  "what_fails_repeated": [
+    {
+      "agent_phrase_pattern": "¿Con cuánto te gustaría contribuir?",
+      "occurrences": 2,
+      "evidence": [
+        {
+          "lead_id": "wa_34632026461",
+          "agent_phrase": "¿Con cuánto te gustaría contribuir, Miriam? 😊",
+          "lead_reaction": "Eres de chile"
+        },
+        {
+          "lead_id": "wa_59899099113",
+          "agent_phrase": "¿Con cuánto te gustaría contribuir?",
+          "lead_reaction": "No puedo"
+        }
+      ],
+      "hypothesis": "A pergunta parece ser muito direta e pode criar pressão no lead, especialmente em contextos financeiros delicados."
+    }
+  ],
+  "anomalies": [
+    "30% dos leads foram marcados como atípicos, indicando uma possível anomalia no tráfego ou na qualificação de leads."
+  ]
+}

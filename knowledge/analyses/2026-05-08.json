@@ -1,0 +1,124 @@
+{
+  "date": "2026-05-08",
+  "summary_pt": "Hoje, tivemos um total de 8 novos leads, com 1 link enviado e 1 pagamento confirmado. No entanto, 10 leads foram classificados como atípicos, o que representa uma anomalia significativa. Os resultados mostraram 6 leads silentes, 15 em andamento, 1 pago e 3 que abandonaram devido ao preço. As objeções recorrentes incluíram dificuldades com o pagamento e preocupações relacionadas ao preço, indicando que muitos leads estão hesitantes em seguir adiante com a compra. O perfil mais frequente entre os leads mostra uma preocupação com a saúde e a necessidade de receitas seguras para diabetes.",
+  "profile_clusters": [
+    {
+      "canonical_slug": "diabeticos",
+      "label": "Diabéticos em busca de receitas",
+      "core_pain": "Desejo de comer pão e doces sem comprometer a saúde devido ao diabetes.",
+      "evidence_slugs_seen": [
+        "diabetico-pesquisa",
+        "diabetico-que-busca-receitas",
+        "diabetica-familia",
+        "diabeticos-chile",
+        "diabeticos-apaixonados-por-cozinhar"
+      ],
+      "evidence_lead_ids": [
+        "wa_554497317509",
+        "wa_59892398149",
+        "wa_59899049259",
+        "wa_56959569866",
+        "wa_59894114797",
+        "wa_5493364562507",
+        "wa_593990756994"
+      ],
+      "draft_profile_md": "# CONTEXTO (PT-BR — não vai pro prompt)\n\n**Label:** Diabéticos em busca de receitas\n**Dor central:** Desejo de comer pão e doces sem comprometer a saúde devido ao diabetes.\n**Drivers de decisão:** [preço acessível, necessidade de receitas adequadas para diabetes, desejo de manter uma dieta prazerosa]\n**Blockers de decisão:** [falta de dinheiro, preocupações financeiras]\n**Hipótese:** O produto oferece receitas saborosas e seguras que atendem às necessidades alimentares dos diabéticos.\n\n# DIRETIVAS (ES — vai pro prompt da Chef Sandra)\n\n**Cuando detectes que el lead encaja en este perfil, ajusta tu enfoque así:**\n\n- En PASO 3 (conexión): valida específicamente su deseo de disfrutar de pan y dulces con frases como \"No necesitas dejar de comer lo que te gusta, solo necesitas la forma correcta de prepararlo.\"\n- En PASO 4 (presentación): destaca primero los libros de recetas saludables porque ayudan a disfrutar de comidas sin preocupaciones.\n- En PASO 5 (precio): enmarca el valor como \"Por menos de lo que gastas en una consulta nutricional, tendrás acceso a más de 50 recetas probadas que son fáciles de hacer y deliciosas.\"\n- Lenguaje preferido: informal, amigável, utiliza emojis.\n- Evita: perguntas diretas sobre preço antes de entender a dor do lead."
+    }
+  ],
+  "objection_patterns": [
+    {
+      "category": "objection_price_hard",
+      "occurrences": 4,
+      "evidence": [
+        {
+          "lead_id": "wa_59899081918",
+          "quote": "Disculpe creí que era gratis"
+        },
+        {
+          "lead_id": "wa_59899099113",
+          "quote": "En este momento no puedo pagar ese valor 😔"
+        },
+        {
+          "lead_id": "wa_59899049259",
+          "quote": "no tengo ese dinero"
+        },
+        {
+          "lead_id": "wa_593990756994",
+          "quote": "No quiero saber el precio por dios"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el costo puede ser una preocupación. Pero recuerda, no quiero que el dinero sea un obstáculo. ¿Qué tal si hablamos sobre opciones más asequibles que se ajusten a tu presupuesto?"
+    },
+    {
+      "category": "objection_payment_method",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59899081918",
+          "quote": "yo no trabajo con tarjeta ni nada yo xsilo enviando Abitab o Redpagos sino no puedo"
+        },
+        {
+          "lead_id": "wa_59177955408",
+          "quote": "Si yo no tengo ese programa para transferir"
+        },
+        {
+          "lead_id": "wa_59894114797",
+          "quote": "tranferencia"
+        }
+      ],
+      "draft_rebuttal_es": "Entiendo que el método de pago puede ser un inconveniente. Estoy aquí para ayudarte a encontrar la mejor manera de realizar la transacción."
+    }
+  ],
+  "what_works_repeated": [
+    {
+      "agent_phrase_pattern": "No necesitas dejar de comer lo que te gusta, solo necesitas la forma correcta de prepararlo.",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59899081918",
+          "agent_phrase": "No necesitas dejar de comer lo que te gusta, Mabel, solo necesitas la forma correcta de prepararlo.",
+          "lead_reaction": "Buenisimo"
+        },
+        {
+          "lead_id": "wa_5493364562507",
+          "agent_phrase": "no quiero que el dinero sea un obstáculo 💚",
+          "lead_reaction": "Si yo no tengo ese programa para transferir"
+        },
+        {
+          "lead_id": "wa_554497317509",
+          "agent_phrase": "Por menos de lo que gastas en una consulta nutricional, tendrás acceso a más de 50 recetas probadas que son fáciles de hacer y deliciosas.",
+          "lead_reaction": "Sí, por favor"
+        }
+      ],
+      "principle": "Cialdini reciprocidade"
+    }
+  ],
+  "what_fails_repeated": [
+    {
+      "agent_phrase_pattern": "¿Con qué valor te gustaría adquirir?",
+      "occurrences": 3,
+      "evidence": [
+        {
+          "lead_id": "wa_59899081918",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlas?",
+          "lead_reaction": "Hola mira discúlpame me voy a quedar con las ganas de saber las receta xque no entiendo mucho el procedimiento..."
+        },
+        {
+          "lead_id": "wa_59899099113",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos?",
+          "lead_reaction": "La verdad que no tengo ni idea lo que vale el dólar"
+        },
+        {
+          "lead_id": "wa_56978541105",
+          "agent_phrase": "¿Con qué valor te gustaría adquirirlos?",
+          "lead_reaction": "No entiendo lo de escoger un valor,no se porque hay 4 valores distintos"
+        }
+      ],
+      "hypothesis": "Perguntar diretamente sobre o preço antes de entender a dor do lead pode levar a hesitações e abandono."
+    }
+  ],
+  "anomalies": [
+    "30% dos leads foram classificados como atípicos, indicando possíveis problemas de tráfego ou segmentação.",
+    "Desproporção entre leads em andamento e leads que abandonaram devido ao preço."
+  ]
+}
