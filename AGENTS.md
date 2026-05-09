@@ -253,13 +253,33 @@ PM2 sair de cena. **Não rode os dois ao mesmo tempo.**
 
 ## Sanitização de nomes
 
-`_safe_first_name(raw)` em `agent.py` filtra `pushName` do WhatsApp antes
-de usar em saudações. Rejeita: emails (`@`), strings com dígitos
-(`helgase1956`), lowercase-only (`bettyvillanuevapardo`), blocklist de
-etiquetas genéricas (`compañeros`, `familia`, `equipo`, `Lead`, etc.).
-Se reprovar, follow-ups e placeholder `[nombre]` caem em saudação neutra
-("Hola"). Aplicado em `handle_message` (via `strip_placeholders`),
-`watcher.py` (followups) e `deliver_purchase` (mensagem de agradecimento).
+Duas fontes possíveis de nome do lead:
+
+1. **`_extract_name_from_history(lead_id)`** em `agent.py` — fonte primária
+   pra qualquer mensagem fixa (followup, deliver_purchase, intercept
+   pós-entrega). Procura no histórico a primeira mensagem da Sandra que
+   pergunta o nome ("¿Cómo te llamas?" e variações via `_NAME_QUESTION_RE`)
+   e pega a próxima resposta do user. Tira prefixos comuns ("Me llamo X",
+   "Soy X" via `_NAME_INTRO_RE`), capitaliza primeira letra e sanitiza
+   com `_safe_first_name`. **Se não achar → "" → saudação neutra ("Hola").**
+   Caso real que motivou: lead com `pushName="Traducir Al Español"`
+   (configuração de tradutor automático no perfil do WhatsApp) — o
+   pushName sozinho fazia a Sandra mandar "Hola Traducir 😊".
+2. **`_safe_first_name(raw)`** em `agent.py` — sanitizador de pushName
+   (rejeita emails `@`, dígitos `helgase1956`, lowercase
+   `bettyvillanuevapardo`, blocklist `compañeros`/`familia`/`Lead`/etc.).
+   Continua sendo usado em `strip_placeholders` (pra substituir
+   `[nombre]` que o LLM eventualmente vaze) e como helper interno do
+   `_extract_name_from_history`.
+
+Ordem de prioridade nos pontos de uso:
+- `deliver_purchase` (agradecimento pós-pagamento) → histórico
+- Intercept pós-entrega ("ya pagué" reincidente) → histórico
+- Follow-up de checkout (2h após link) → histórico
+- Follow-up de preço (30min após PASO 5 sem resposta) → histórico
+- `strip_placeholders` (placeholder `[nombre]` vazado pelo LLM em
+  resposta IA) → ainda usa `lead_name` (lookup_lead_name + sender_name),
+  mas é raro porque o LLM normalmente já pega o nome do contexto.
 
 ## Detector de fechamento de cortesia
 

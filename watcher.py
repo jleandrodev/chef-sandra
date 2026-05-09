@@ -38,7 +38,7 @@ from agent import (handle_message, commit_response, init_db, AI_API_KEY,
                    has_image_alert_been_sent, mark_image_alert_sent,
                    is_lead_paused,
                    OWNER_PHONE,
-                   _safe_first_name)
+                   _safe_first_name, _extract_name_from_history)
 from book_presentation import MEDIA_DISPATCH, CONTENT_DIR
 
 # ── Configuração ──────────────────────────────────────────────────────────────
@@ -385,7 +385,11 @@ def deliver_purchase(phone: str, name: str, lead_id: str, trigger: str):
        4) marca books_delivered no banco,
        5) notifica o dono — celebração se tudo OK, alerta se algum PDF falhou.
     `trigger` é só pra log: 'payment_text' | 'awaiting_files' | 'image_proof'."""
-    safe = _safe_first_name(name)
+    # Prioriza o nome do histórico (resposta à pergunta de PASO 1) sobre o
+    # `pushName` do WhatsApp — pushName pode ser etiqueta/apelido/configuração
+    # de tradução do app (ex: "Traducir Al Español") e nunca deve aparecer em
+    # saudações. Sem nome → saudação neutra.
+    safe = _extract_name_from_history(lead_id)
     nombre = safe if safe else ""
     saludo = f"¡Qué alegría, {nombre}!" if nombre else "¡Qué alegría!"
     thank_msg = (
@@ -774,7 +778,7 @@ def watch():
                 # livros, não os PDFs) e confundir o cliente. Mandamos uma
                 # tranquilização fixa apontando que os PDFs já foram enviados.
                 if purchase_trigger and books_already_delivered(lead_id):
-                    safe = _safe_first_name(name)
+                    safe = _extract_name_from_history(lead_id)
                     nombre = f", {safe}" if safe else ""
                     user_msg = text if text else "(imagen recibida — comprobante de pago)"
                     msg = (
@@ -832,10 +836,11 @@ def watch():
 
             # ── Follow-ups de checkout ──────────────────────────────────────
             for fu in get_pending_followups():
-                # pushName do WhatsApp pode ser email/username/etiqueta de grupo;
-                # _safe_first_name devolve "" pra qualquer coisa que não pareça
-                # um primeiro nome humano — aí caímos no saudo neutro.
-                safe = _safe_first_name(fu["name"])
+                # Nome vem do histórico (resposta à pergunta de PASO 1), NÃO
+                # do pushName — pushName pode ser etiqueta/apelido/configuração
+                # do app (ex: "Traducir Al Español"). Sem nome no histórico →
+                # saudação neutra.
+                safe = _extract_name_from_history(fu["lead_id"])
                 greeting = f"Hola {safe}" if safe else "Hola"
                 msg = (
                     f"{greeting} 😊 ¿Pudiste completar el proceso de compra?\n"
@@ -847,7 +852,7 @@ def watch():
 
             # ── Follow-ups de preço (30 min sem resposta após PASO 5) ───────
             for fu in get_pending_price_followups():
-                safe = _safe_first_name(fu["name"])
+                safe = _extract_name_from_history(fu["lead_id"])
                 greeting = f"Hola {safe}" if safe else "Hola"
                 msg = (
                     f"{greeting} 😊 ¿Pudiste decidir con cuál de los valores te quedas? "

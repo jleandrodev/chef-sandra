@@ -335,6 +335,65 @@ def _safe_first_name(raw: str) -> str:
     return ""
 
 
+# Pergunta da Sandra que pede o nome do lead (PASO 1). Cobrimos variações
+# comuns. Quando bate, a próxima mensagem do user é candidata a ser o nome.
+_NAME_QUESTION_RE = re.compile(
+    r"(c[oó]mo te llamas|cu[aá]l es tu nombre|tu nombre|me dices tu nombre|"
+    r"te llamas|c[oó]mo te llamás)",
+    re.IGNORECASE,
+)
+# Prefixos comuns na resposta do lead que carregam o nome real:
+# "Soy Cristina", "Me llamo Cristina", "Mi nombre es Cristina", etc.
+_NAME_INTRO_RE = re.compile(
+    r"^\s*(?:hola[,\s]+)?(?:me\s+llamo|mi\s+nombre\s+es|soy|me\s+dicen|"
+    r"me\s+llaman|aqu[ií]\s+es)\s+",
+    re.IGNORECASE,
+)
+
+
+def _extract_name_from_history(lead_id: str) -> str:
+    """Extrai o primeiro nome real do lead do histórico da conversa,
+    procurando a resposta à pergunta de PASO 1 ("¿Cómo te llamas?"). Mais
+    confiável que `pushName` do WhatsApp — leads costumam colocar
+    apelidos/etiquetas/configurações de tradução ali (ex: 'Traducir Al
+    Español') que não devem ser usadas como nome em saudações.
+
+    Retorna "" se não encontrar — chamadores devem cair em saudação
+    neutra ("Hola") em vez de inventar nome."""
+    if not lead_id:
+        return ""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT role, content FROM messages WHERE lead_id = ? ORDER BY ts ASC, id ASC",
+        (lead_id,),
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    awaiting_response = False
+    for r in rows:
+        role = r["role"]
+        content = (r["content"] or "")
+        if role == "assistant" and _NAME_QUESTION_RE.search(content):
+            awaiting_response = True
+            continue
+        if awaiting_response and role == "user":
+            raw = content.strip()
+            # Tira prefixos comuns ("me llamo X", "soy X")
+            raw = _NAME_INTRO_RE.sub("", raw)
+            tokens = raw.split()
+            if not tokens:
+                return ""
+            first = tokens[0].strip(".,;:!?¡¿\"'()[]{}")
+            # Capitaliza primeira letra pra passar pelo _SAFE_NAME_RE
+            # (lead pode ter escrito "cristina" tudo minúsculo)
+            if first:
+                first = first[:1].upper() + first[1:]
+            return _safe_first_name(first)
+    return ""
+
+
 def strip_placeholders(text: str, lead_name: str = None) -> str:
     """Limpa qualquer placeholder vazado pelo LLM. Substitui placeholders de
     NOME pelo nome real do lead (se conhecido e plausível); senão remove o
