@@ -308,6 +308,35 @@ tail -f knowledge/analyses/_runs/weekly.log
 tail -f knowledge/analyses/_runs/2026-05-04_daily_run.log
 ```
 
+## Recuperação após outage (OpenAI 429, Evolution down, etc.)
+
+Use `recover_429_leads.py` quando a Sandra ficar impossibilitada de
+responder por algum tempo (rate limit OpenAI, queda do gateway, watcher
+crashado) e leads NOVOS — que mandaram a primeira mensagem "Quiero las
+recetas..." e nunca receberam nada — ficaram em silêncio.
+
+Por que não usar o `recover.py` padrão pra isso? Porque ele assume
+conversa em andamento ("te dejé pendiente la presentación") — pra
+quem nunca recebeu resposta nenhuma, isso seria mentira. O script
+`recover_429_leads.py` abre com PASO 1 + desculpa breve.
+
+Fluxo padrão de incidente:
+
+```bash
+# 1. Identificar janela do outage (pm2 logs watcher --err / dashboard OpenAI)
+# 2. Rodar a query SQL que está no docstring do script
+# 3. Editar TARGETS no script com os leads candidatos
+# 4. Conferir
+python3 recover_429_leads.py --dry-run
+# 5. Enviar
+python3 recover_429_leads.py
+```
+
+O script é idempotente — leads com `daily_recovered_at` preenchido são
+pulados automaticamente, então pode rodar várias vezes ampliando a
+lista TARGETS por etapas. Cada lead recebe a mensagem de recuperação UMA
+única vez por ciclo de recovery.
+
 ## Histórico de mudanças relevantes
 
 ### 2026-05-06 (continuação) — Reset de teste + intercept pós-entrega
