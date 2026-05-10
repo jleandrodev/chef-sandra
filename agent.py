@@ -15,7 +15,8 @@ import logging
 import urllib.request
 import urllib.error
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 _logger = logging.getLogger(__name__)
 
@@ -58,6 +59,15 @@ ALL_CHECKOUTS = [CHECKOUT_BASIC, CHECKOUT_LITE, CHECKOUT_MAIN, CHECKOUT_PREMIUM,
 
 FOLLOWUP_DELAY = 7200        # 2 horas em segundos (após envio do link)
 PRICE_FOLLOWUP_DELAY = 1800  # 30 min em segundos (após envio do preço sem resposta)
+
+# Recovery: cadência crescente (em segundos) pra reengajar lead que sumiu.
+# 30min → 4h → 1d. Cada stage só dispara se o cliente ainda não respondeu.
+# Quiet hours: bot não manda recovery dentro desse intervalo (formato 24h,
+# fuso TIMEZONE).
+RECOVERY_STAGES_SECONDS    = [1800, 14400, 86400]
+RECOVERY_QUIET_HOURS_START = 22
+RECOVERY_QUIET_HOURS_END   = 8
+TIMEZONE                   = "America/Sao_Paulo"
 
 OWNER_PHONE = "5544997317509"  # Número do dono — modo gerencial
 
@@ -489,6 +499,20 @@ def init_db():
             followup_sent INTEGER DEFAULT 0
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS recoveries (
+            lead_id          TEXT PRIMARY KEY,
+            phone            TEXT NOT NULL,
+            name             TEXT,
+            stage            INTEGER DEFAULT 0,
+            next_attempt_at  INTEGER NOT NULL,
+            last_attempt_at  INTEGER,
+            status           TEXT DEFAULT 'pending',
+            source           TEXT DEFAULT 'auto',
+            created_at       INTEGER NOT NULL,
+            updated_at       INTEGER NOT NULL
+        )
+    """)
 
     # ── Fase 1: tabelas do sistema de aprendizado ──────────────────────────
     c.execute("""
@@ -874,6 +898,228 @@ def mark_price_followup_sent(lead_id: str):
     c.execute("UPDATE price_followups SET followup_sent = 1 WHERE lead_id = ?", (lead_id,))
     conn.commit()
     conn.close()
+
+
+def record_assistant_message(lead_id: str, content: str):
+    """Append assistant message to history — usado pelo watcher quando envia
+    mensagem de recovery gerada pelo LLM, pra que ela vire parte do histórico."""
+    add_message(lead_id, "assistant", content)
+
+
+# ── Recoveries (cadência genérica de reengajamento de lead frio) ──────────────
+#
+# Toda vez que a Sandra responde, agendamos uma tentativa de recovery em
+# stage 0 (default 30min). Cliente respondendo cancela. Se ele continuar
+# em silêncio, watcher avança stage 1 (4h) e stage 2 (1d). Após stage 2,
+# desiste.
+#
+# Markers que o LLM pode emitir na resposta pra sobrescrever a cadência:
+#   [RECOVERY_AT:Ns]  → cliente pediu retorno em N segundos. Override do
+#                       schedule (uma tentativa única naquele horário).
+#   [RECOVERY_OFF]    → cliente recusou claramente; nunca mais reengaja.
+#
+# Coexiste com o recover.py legacy (script CLI single-shot diário): quando
+# o sistema novo dispara, ele seta leads.daily_recovered_at, e o recover.py
+# pula leads que já têm essa coluna preenchida — evita double-message.
+
+def _now_dt_in_tz(ts: int = None):
+    ts = ts if ts is not None else int(time.time())
+    return datetime.fromtimestamp(ts, tz=ZoneInfo(TIMEZONE))
+
+
+def _is_quiet_hour(dt: datetime) -> bool:
+    qs = RECOVERY_QUIET_HOURS_START
+    qe = RECOVERY_QUIET_HOURS_END
+    if qs == qe:
+        return False
+    h = dt.hour
+    if qs < qe:
+        return qs <= h < qe
+    return h >= qs or h < qe
+
+
+def _next_valid_recovery_time(ts: int) -> int:
+    """Empurra ts pra fora da janela de silêncio se necessário."""
+    qs = RECOVERY_QUIET_HOURS_START
+    qe = RECOVERY_QUIET_HOURS_END
+    if qs == qe:
+        return ts
+    dt = _now_dt_in_tz(ts)
+    if not _is_quiet_hour(dt):
+        return ts
+    target = dt.replace(hour=qe, minute=0, second=0, microsecond=0)
+    if qs > qe and dt.hour >= qs:
+        target += timedelta(days=1)
+    return int(target.timestamp())
+
+
+def schedule_recovery(lead_id: str, phone: str, name: str = None,
+                      override_seconds: int = None, source: str = "auto"):
+    if not RECOVERY_STAGES_SECONDS:
+        return
+    delay = override_seconds if override_seconds is not None else RECOVERY_STAGES_SECONDS[0]
+    next_at = _next_valid_recovery_time(int(time.time()) + int(delay))
+    now = int(time.time())
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO recoveries (lead_id, phone, name, stage, next_attempt_at,
+                                   status, source, created_at, updated_at)
+           VALUES (?, ?, ?, 0, ?, 'pending', ?, ?, ?)
+           ON CONFLICT(lead_id) DO UPDATE SET
+              phone           = excluded.phone,
+              name            = COALESCE(excluded.name, name),
+              stage           = 0,
+              next_attempt_at = excluded.next_attempt_at,
+              status          = 'pending',
+              source          = excluded.source,
+              updated_at      = excluded.updated_at""",
+        (lead_id, phone, name, next_at, source, now, now)
+    )
+    conn.commit()
+    conn.close()
+
+
+def cancel_recovery(lead_id: str):
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE recoveries SET status='cancelled', updated_at=? "
+        "WHERE lead_id=? AND status='pending'",
+        (int(time.time()), lead_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_recovery_given_up(lead_id: str):
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE recoveries SET status='given_up', updated_at=? WHERE lead_id=?",
+        (int(time.time()), lead_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_pending_recoveries() -> list:
+    """Recoveries que devem disparar agora — exclui leads pausados e leads
+    que já confirmaram pagamento (outcome='paid')."""
+    now = int(time.time())
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT r.lead_id, r.phone, r.name, r.stage "
+        "FROM recoveries r "
+        "LEFT JOIN leads l ON l.id = r.lead_id "
+        "WHERE r.status = 'pending' "
+        "  AND r.next_attempt_at <= ? "
+        "  AND COALESCE(l.paused, 0) = 0 "
+        "  AND (l.outcome IS NULL OR l.outcome != 'paid')",
+        (now,)
+    )
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+
+def advance_recovery(lead_id: str):
+    """Após enviar uma tentativa: avança pra próxima stage. Se passou da
+    última, marca status='done'. Também seta leads.daily_recovered_at pra
+    o recover.py legacy não duplicar o disparo."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute("SELECT stage FROM recoveries WHERE lead_id=?", (lead_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return
+    next_stage = int(row["stage"]) + 1
+    now = int(time.time())
+    if next_stage >= len(RECOVERY_STAGES_SECONDS):
+        c.execute(
+            "UPDATE recoveries SET status='done', last_attempt_at=?, updated_at=? "
+            "WHERE lead_id=?",
+            (now, now, lead_id)
+        )
+    else:
+        delay = RECOVERY_STAGES_SECONDS[next_stage]
+        next_at = _next_valid_recovery_time(now + int(delay))
+        c.execute(
+            "UPDATE recoveries SET stage=?, next_attempt_at=?, "
+            "  last_attempt_at=?, updated_at=? WHERE lead_id=?",
+            (next_stage, next_at, now, now, lead_id)
+        )
+    # Marca pro recover.py legacy não disparar de novo no mesmo lead
+    c.execute("UPDATE leads SET daily_recovered_at=? WHERE id=? AND daily_recovered_at IS NULL",
+              (now, lead_id))
+    conn.commit()
+    conn.close()
+
+
+# Markers que o LLM pode emitir dentro da resposta:
+_RECOVERY_AT_PATTERN  = re.compile(r'\[RECOVERY_AT:\s*(\d+)\s*s?\s*\]', re.IGNORECASE)
+_RECOVERY_OFF_PATTERN = re.compile(r'\[RECOVERY_OFF\]', re.IGNORECASE)
+_RECOVERY_AT_MIN_S    = 60
+_RECOVERY_AT_MAX_S    = 30 * 86400  # 30 dias — teto de sanidade
+
+
+def _extract_recovery_marker(response: str):
+    """Retorna (resposta_limpa, kind, value):
+        kind ∈ {None, 'at', 'off'}
+        value = delay_s quando kind=='at', None caso contrário
+    OFF tem prioridade sobre AT se ambos aparecerem."""
+    if not response:
+        return response, None, None
+    cleaned = response
+    if _RECOVERY_OFF_PATTERN.search(cleaned):
+        cleaned = _RECOVERY_OFF_PATTERN.sub('', cleaned).strip()
+        cleaned = _RECOVERY_AT_PATTERN.sub('', cleaned).strip()
+        return cleaned, 'off', None
+    m = _RECOVERY_AT_PATTERN.search(cleaned)
+    if m:
+        delay = int(m.group(1))
+        delay = max(_RECOVERY_AT_MIN_S, min(delay, _RECOVERY_AT_MAX_S))
+        cleaned = _RECOVERY_AT_PATTERN.sub('', cleaned).strip()
+        return cleaned, 'at', delay
+    return cleaned, None, None
+
+
+def generate_recovery_message(lead_id: str, name: str, stage: int) -> str:
+    """LLM gera mensagem curta de reengajamento contextual ao histórico.
+    Em español — mercado de Chef Sandra. Retorna None se não tiver
+    histórico ou se a chamada falhar."""
+    history = load_session(lead_id)
+    if not history:
+        return None
+    profile_slug = get_lead_profile(lead_id)
+    base_system = build_system_prompt(profile_slug=profile_slug)
+    stage_label = (
+        "30 minutos" if stage == 0 else
+        "4 horas"    if stage == 1 else
+        "1 día"
+    )
+    instr = (
+        "\n\n════════════════════════════════════════\n"
+        "[CONTEXTO — REENGANCHE DE LEAD FRÍO]\n"
+        "════════════════════════════════════════\n"
+        f"El cliente dejó de responder. Esta es la tentativa de reenganche "
+        f"(stage={stage}: {stage_label} desde el último mensaje).\n"
+        "REGLAS:\n"
+        "1. Manda UN solo mensaje corto (máx 2 líneas), cálido, sin repetir literalmente lo que ya dijiste.\n"
+        "2. Retoma un punto ESPECÍFICO de la conversación (un alimento que extrañe, persona para quien busca, "
+        "preocupación concreta como glucosa/peso/familia, un valor ya discutido, o una duda no resuelta). "
+        "No uses frases de plantilla genéricas tipo '¿cómo va todo?' o '¿estás ahí?'.\n"
+        "3. No seas insistente. Tono: humano, paciente, curioso.\n"
+        "4. NO uses markers especiales ([RECOVERY_*]) en este mensaje — solo el texto que se enviará directo al cliente.\n"
+        "5. NO escribas prólogos tipo 'Aquí va un mensaje:' — devuelve solo el texto al cliente."
+    )
+    try:
+        return call_ai(history, system=base_system + instr, max_tokens=200)
+    except Exception as e:
+        _logger.error(f"Falha ao gerar recovery msg pra {lead_id}: {e}")
+        return None
 
 
 def get_sales_stats() -> str:
@@ -1294,6 +1540,7 @@ def handle_message(phone: str, sender_name: str, text: str) -> str:
         return None
 
     cancel_price_followup(lead_id)  # lead respondeu — cancela follow-up de preço pendente
+    cancel_recovery(lead_id)        # lead respondeu — cancela recovery pendente
     messages = load_session(lead_id)
 
     # Fechamento de cortesia: se o bot já se despediu e o lead só retribui
@@ -1324,23 +1571,42 @@ def handle_message(phone: str, sender_name: str, text: str) -> str:
     lead_name = _lookup_lead_name(lead_id) or sender_name
     response = strip_placeholders(response, lead_name=lead_name)
 
+    # Markers de recovery: cliente pediu retorno em horário específico
+    # ([RECOVERY_AT:Ns]) ou recusou contato ([RECOVERY_OFF]). Removidos da
+    # mensagem antes de ir pro cliente. OFF prevalece sobre AT. Os markers
+    # ficam stash em _pending_recovery_action[phone] pra commit_response
+    # consumir após envio confirmado.
+    response, rec_kind, rec_value = _extract_recovery_marker(response)
+    _pending_recovery_action[phone] = (rec_kind, rec_value)
+
     # IMPORTANTE: o histórico do assistant e os side-effects (mark_checkout,
-    # schedule_followup) são gravados pelo watcher SÓ depois do envio confirmado,
-    # via commit_response(). Isso evita histórico fora de sincronia quando a
-    # Evolution API falha no envio (ex: timeout) e o cliente nunca recebe.
+    # schedule_followup, schedule_recovery) são gravados pelo watcher SÓ
+    # depois do envio confirmado, via commit_response(). Isso evita histórico
+    # fora de sincronia quando a Evolution API falha no envio.
     return response
+
+
+# Stash de markers de recovery extraídos em handle_message — consumido por
+# commit_response após o envio. Em-memória basta: se o processo cair entre
+# handle e commit, o envio também falhou e a entrada vira lixo benigno
+# (sobrescrita na próxima vez que o mesmo phone for processado).
+_pending_recovery_action: dict = {}
 
 
 def commit_response(phone: str, sender_name: str, response: str):
     """Chamado pelo watcher APÓS confirmação de envio. Persiste a resposta no
     histórico e dispara side-effects (mark_checkout, schedule_followup,
-    schedule_price_followup). No-op para owner ou leads pausados."""
+    schedule_price_followup, schedule_recovery). No-op para owner ou leads
+    pausados."""
     if not response:
+        _pending_recovery_action.pop(phone, None)
         return
     if is_owner(phone):
+        _pending_recovery_action.pop(phone, None)
         return  # owner não tem fluxo de followup; modo teste é em memória
     lead_id = f"wa_{phone}"
     if is_lead_paused(lead_id):
+        _pending_recovery_action.pop(phone, None)
         return  # lead pausado: humano assumiu
     add_message(lead_id, "assistant", response)
 
@@ -1352,6 +1618,17 @@ def commit_response(phone: str, sender_name: str, response: str):
     elif _response_mentions_tier_price(response):
         # PASO 5: preços apresentados sem link → followup de 30 min se não houver resposta
         schedule_price_followup(lead_id, phone, sender_name)
+
+    # Recovery: agenda próxima tentativa. OFF marca como desistido, AT usa
+    # override (cliente pediu horário específico), default é cadência stage 0.
+    rec_kind, rec_value = _pending_recovery_action.pop(phone, (None, None))
+    if rec_kind == 'off':
+        mark_recovery_given_up(lead_id)
+    elif rec_kind == 'at':
+        schedule_recovery(lead_id, phone, sender_name,
+                          override_seconds=rec_value, source='client_request')
+    else:
+        schedule_recovery(lead_id, phone, sender_name)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

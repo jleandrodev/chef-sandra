@@ -37,6 +37,8 @@ from agent import (handle_message, commit_response, init_db, AI_API_KEY,
                    mark_books_delivered, add_message, mark_checkout_sent,
                    has_image_alert_been_sent, mark_image_alert_sent,
                    is_lead_paused,
+                   get_pending_recoveries, advance_recovery,
+                   generate_recovery_message, record_assistant_message,
                    OWNER_PHONE,
                    _safe_first_name, _extract_name_from_history)
 from book_presentation import MEDIA_DISPATCH, CONTENT_DIR
@@ -861,6 +863,20 @@ def watch():
                 if send_whatsapp(fu["phone"], msg):
                     mark_price_followup_sent(fu["lead_id"])
                     logger.info(f"📲 Follow-up de preço enviado para {fu['phone']}")
+
+            # ── Recoveries (cadência 30min → 4h → 1d, gerada via LLM) ──────
+            for r in get_pending_recoveries():
+                lead_id = r["lead_id"]
+                stage   = r["stage"]
+                msg     = generate_recovery_message(lead_id, r.get("name"), stage)
+                if not msg:
+                    logger.warning(f"⚠️  Recovery stage {stage} sem mensagem gerada — lead={lead_id}")
+                    advance_recovery(lead_id)
+                    continue
+                if send_whatsapp(r["phone"], msg):
+                    record_assistant_message(lead_id, msg)
+                    advance_recovery(lead_id)
+                    logger.info(f"♻️  Recovery stage {stage} enviado pra {r['phone']}")
 
             time.sleep(POLL_INTERVAL)
 
