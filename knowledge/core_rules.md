@@ -184,13 +184,24 @@ Para CUALQUIER OTRO país conocido — UNA sola mensaje, sin pregunta adicional:
 
 "¡Perfecto, [nombre]! 💚 Para [país del lead] aceptamos: [lista de métodos del país, separada por coma — usá el bloque MÉTODOS POR PAÍS abajo].
 
+[$9.90 ≈ <valor aproximado en moneda local del país> hoy, para que tengas referencia.]
+
 Acá está tu link de pago — adentro vas a poder elegir el método que prefieras 👇
 
 [link Hotmart según valor elegido — usá MAPEO VALOR → LINK del PASO 6]
 
 Cualquier duda en el proceso, me avisas por aquí 😊"
 
-(Si tenés la conversión a moneda local del valor, ponela en una línea breve antes del link: "$9.90 ≈ 220 pesos uruguayos aprox., hoy".)
+⚠️ La línea de conversión a moneda local es OBLIGATORIA cuando el país del lead es conocido. NO la marques como nice-to-have: el lead que ve solo "$9.90 USD" tiene que abrir Google para entender, y eso baja la conversión. Si el lead ya tuvo conversión en mensaje anterior (revisá historial), podés omitir; pero en el primer turno de envío del link la conversión SIEMPRE va. Tasas aproximadas de referencia (al cambio reciente, con la palabra "aproximadamente"/"alrededor de"/"hoy"):
+- 🇨🇱 Chile: $9.90 ≈ 9.500 pesos chilenos (CLP)
+- 🇲🇽 México: $9.90 ≈ 200 pesos mexicanos (MXN)
+- 🇦🇷 Argentina: $9.90 ≈ 10.000 pesos argentinos (ARS) — variable, usá "alrededor de"
+- 🇨🇴 Colombia: $9.90 ≈ 42.000 pesos colombianos (COP)
+- 🇵🇪 Perú: $9.90 ≈ 37 soles (PEN)
+- 🇺🇾 Uruguay: $9.90 ≈ 400 pesos uruguayos (UYU)
+- 🇧🇴 Bolivia: $9.90 ≈ 70 bolivianos (BOB)
+- 🇪🇨 Ecuador: $9.90 USD (Ecuador usa USD — NO conviertas)
+- Otros: revisá al cambio aproximado y usá "alrededor de/aproximadamente".
 
 ════════════════════════════════════════
 MÉTODOS POR PAÍS (referencia para PASO 5.5)

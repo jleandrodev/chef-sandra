@@ -317,6 +317,14 @@ _NAME_BLOCKLIST = {
     "familia", "equipo", "hermanos", "hermanas", "niños", "niñas",
     "mamá", "mama", "papá", "papa", "amor", "mi amor",
     "contacto", "info", "soporte", "whatsapp", "business", "cliente",
+    # Saudações / monossílabos que leads digitam quando perguntados o nome
+    # (visto em produção: lead responde "Hola" ao "¿Cómo te llamas?", virava
+    # "Hola Hola" no template de followup). Bloqueamos pra cair em saudação
+    # neutra em vez de duplicar a palavra.
+    "hola", "holaa", "holaaa", "buenas", "buenos", "buen", "buen día",
+    "buenas tardes", "buenas noches", "buen día",
+    "ola", "oi", "hi", "hello", "hey",
+    "gracias", "ok", "sí", "si", "no", "vale", "dale", "perfecto",
 }
 
 
@@ -1105,15 +1113,44 @@ def generate_recovery_message(lead_id: str, name: str, stage: int) -> str:
         "[CONTEXTO — REENGANCHE DE LEAD FRÍO]\n"
         "════════════════════════════════════════\n"
         f"El cliente dejó de responder. Esta es la tentativa de reenganche "
-        f"(stage={stage}: {stage_label} desde el último mensaje).\n"
-        "REGLAS:\n"
+        f"(stage={stage}: {stage_label} desde el último mensaje). El cliente NO confirmó pago, "
+        "NO compró, y NO terminó el funnel — solo se quedó callado.\n"
+        "\n"
+        "REGLAS POSITIVAS:\n"
         "1. Manda UN solo mensaje corto (máx 2 líneas), cálido, sin repetir literalmente lo que ya dijiste.\n"
         "2. Retoma un punto ESPECÍFICO de la conversación (un alimento que extrañe, persona para quien busca, "
-        "preocupación concreta como glucosa/peso/familia, un valor ya discutido, o una duda no resuelta). "
-        "No uses frases de plantilla genéricas tipo '¿cómo va todo?' o '¿estás ahí?'.\n"
-        "3. No seas insistente. Tono: humano, paciente, curioso.\n"
-        "4. NO uses markers especiales ([RECOVERY_*]) en este mensaje — solo el texto que se enviará directo al cliente.\n"
-        "5. NO escribas prólogos tipo 'Aquí va un mensaje:' — devuelve solo el texto al cliente."
+        "preocupación concreta como glucosa/peso/familia, una duda no resuelta). NO uses plantillas genéricas "
+        "tipo '¿cómo va todo?' / '¿estás ahí?' / '¿pudiste completar la compra?'.\n"
+        "3. Tono humano, paciente, curioso. NO insistas.\n"
+        "\n"
+        "🛑 PROHIBICIONES ABSOLUTAS (fallar en cualquiera de estas es un BUG de producción):\n"
+        "❌ NUNCA agradezcas la compra ni uses tono post-venta. PROHIBIDO emitir frases tipo "
+        "'¡qué alegría por tu compra!' / 'mil gracias por tu compra' / 'espero que disfrutes las recetas' / "
+        "'gracias por confiar en mí' / cualquier variación que sugiera que el lead pagó. El lead NO pagó. "
+        "Esto pasó en producción (bug 11/05): la recovery stage 1 felicitó por una compra que nunca ocurrió.\n"
+        "❌ NUNCA mandes link de pago (Hotmart o cualquier otro URL de checkout) ni datos de pago "
+        "(clave Pix, CPF, Wise email/routing/account). Si ya mandaste link antes en el historial, NO lo repitas. "
+        "Recovery NO es para reenviar links — es para reabrir la conversación. Esto pasó en producción "
+        "(bug 11/05): la recovery mandó el mismo link Hotmart 3 veces al mismo lead.\n"
+        "❌ NUNCA saludes como si fuera el PRIMER mensaje ('¡Hola! Soy la Chef Sandra. ¿Cómo te llamas?'). "
+        "El lead ya te conoce — eso ya está en el historial. Retoma desde donde quedó. Esto pasó en producción "
+        "(bug 11/05): la recovery se presentó de nuevo del cero, perdiendo todo el rapport.\n"
+        "❌ NUNCA emitas markers ([[ENVIAR_LIBROS]], [[ENVIAR_PRUEBA_*]], [[ENVIAR_CLAVE_PIX]], "
+        "[[ENVIAR_WISE_*]], [RECOVERY_*], [DELAYED_REPLY], [HANDOFF], [ASK_OWNER]). Esos markers son del "
+        "flujo principal — en recovery NO se procesan, salen como texto literal al cliente y queda lixo "
+        "tipo '[[ENVIAR_LIBROS]]' en el chat. Esto pasó en producción (bug 11/05).\n"
+        "❌ NUNCA presentes el precio de nuevo ('los 5 libros por $9.90 USD') ni la lista de métodos de pago. "
+        "Si el lead quiere saber, va a preguntar — ahí responde el flujo normal en el próximo turno.\n"
+        "❌ NO uses prólogos tipo 'Aquí va un mensaje:' — devuelve SOLO el texto al cliente.\n"
+        "\n"
+        "Ejemplos buenos (retoma punto específico, tono leve):\n"
+        "  • 'Pensando en lo que me dijiste de tu marido, Marcia — ¿alguna duda con los libros que te frene?'\n"
+        "  • '¿Pudiste mirar los panes que te quedan más cómodos, Gladys? Si surgió alguna duda, acá estoy 💚'\n"
+        "  • 'Sé que estás cuidando a tu mamá, Lucía — cualquier cosa que dificulte avanzar, contame 💚'\n"
+        "\n"
+        "Si el historial NO tiene contexto suficiente para personalizar (conversación muy corta o sin detalles), "
+        "manda algo neutro pero NUNCA repitas saludo de inicio. Ejemplo: '¿Alguna duda que pueda aclararte, "
+        "[nombre]? Acá sigo 💚'"
     )
     try:
         return call_ai(history, system=base_system + instr, max_tokens=200)

@@ -39,6 +39,7 @@ from agent import (handle_message, commit_response, init_db, AI_API_KEY,
                    is_lead_paused,
                    get_pending_recoveries, advance_recovery,
                    generate_recovery_message, record_assistant_message,
+                   _is_quiet_hour, _now_dt_in_tz,
                    OWNER_PHONE,
                    _safe_first_name, _extract_name_from_history)
 from book_presentation import MEDIA_DISPATCH, CONTENT_DIR
@@ -836,6 +837,16 @@ def watch():
 
             save_state(state)
 
+            # ── Quiet hours: bot não dispara nenhuma mensagem automática
+            # (followup link/preço, recovery) entre 22h e 8h do fuso ops.
+            # Mensagens de cliente entrando seguem sendo processadas (acima);
+            # o silêncio é só para envios proativos. Quando a janela acaba,
+            # os pendentes acumulados disparam no próximo poll naturalmente.
+            in_quiet = _is_quiet_hour(_now_dt_in_tz())
+            if in_quiet:
+                time.sleep(POLL_INTERVAL)
+                continue
+
             # ── Follow-ups de checkout ──────────────────────────────────────
             for fu in get_pending_followups():
                 # Nome vem do histórico (resposta à pergunta de PASO 1), NÃO
@@ -871,6 +882,16 @@ def watch():
                 msg     = generate_recovery_message(lead_id, r.get("name"), stage)
                 if not msg:
                     logger.warning(f"⚠️  Recovery stage {stage} sem mensagem gerada — lead={lead_id}")
+                    advance_recovery(lead_id)
+                    continue
+                # Defesa em camada: o prompt do LLM proíbe markers em
+                # recovery, mas se desobedecer (visto em produção 11/05 com
+                # [[ENVIAR_LIBROS]] indo literal pro cliente) limpamos aqui
+                # — recovery NUNCA roda através do dispatch_response que
+                # expandiria os markers.
+                msg = _scrub_markers(msg)
+                if not msg:
+                    logger.warning(f"⚠️  Recovery stage {stage} ficou vazia após scrub — lead={lead_id}")
                     advance_recovery(lead_id)
                     continue
                 if send_whatsapp(r["phone"], msg):
