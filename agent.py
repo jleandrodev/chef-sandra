@@ -522,6 +522,26 @@ def init_db():
         )
     """)
 
+    # Stash durável dos markers de recovery extraídos em handle_message até
+    # serem consumidos por commit_response. Antes era um dict em memória, mas
+    # um restart entre handle e commit (janela ~1-3s) perdia o marker. TTL
+    # curto via housekeeping abaixo — entradas órfãs > 1h são lixo benigno.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pending_recovery_actions (
+            phone       TEXT PRIMARY KEY,
+            kind        TEXT,
+            value       INTEGER,
+            created_at  INTEGER NOT NULL
+        )
+    """)
+    # Housekeeping: remove entradas órfãs (> 1h). Só roda no boot, sem
+    # custo notável — a tabela tende a ficar pequena (1 linha por lead ativo
+    # em transição entre handle e commit).
+    c.execute(
+        "DELETE FROM pending_recovery_actions "
+        "WHERE created_at < strftime('%s','now') - 3600"
+    )
+
     # ── Fase 1: tabelas do sistema de aprendizado ──────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS conversation_analysis (
@@ -1611,10 +1631,10 @@ def handle_message(phone: str, sender_name: str, text: str) -> str:
     # Markers de recovery: cliente pediu retorno em horário específico
     # ([RECOVERY_AT:Ns]) ou recusou contato ([RECOVERY_OFF]). Removidos da
     # mensagem antes de ir pro cliente. OFF prevalece sobre AT. Os markers
-    # ficam stash em _pending_recovery_action[phone] pra commit_response
-    # consumir após envio confirmado.
+    # ficam stash em pending_recovery_actions (SQLite) pra commit_response
+    # consumir após envio confirmado — sobrevive a restart do watcher.
     response, rec_kind, rec_value = _extract_recovery_marker(response)
-    _pending_recovery_action[phone] = (rec_kind, rec_value)
+    _set_pending_recovery_action(phone, rec_kind, rec_value)
 
     # IMPORTANTE: o histórico do assistant e os side-effects (mark_checkout,
     # schedule_followup, schedule_recovery) são gravados pelo watcher SÓ
@@ -1623,11 +1643,45 @@ def handle_message(phone: str, sender_name: str, text: str) -> str:
     return response
 
 
-# Stash de markers de recovery extraídos em handle_message — consumido por
-# commit_response após o envio. Em-memória basta: se o processo cair entre
-# handle e commit, o envio também falhou e a entrada vira lixo benigno
-# (sobrescrita na próxima vez que o mesmo phone for processado).
-_pending_recovery_action: dict = {}
+# Stash durável dos markers de recovery extraídos em handle_message —
+# consumido por commit_response após o envio. Persistido em SQLite (tabela
+# pending_recovery_actions) pra sobreviver a restart do watcher na janela
+# curta (~1-3s) entre handle_message e commit_response. Housekeeping em
+# init_db() limpa entradas órfãs > 1h.
+
+def _set_pending_recovery_action(phone: str, kind, value):
+    """INSERT OR REPLACE da action pendente. `kind` é None|'off'|'at';
+    `value` é int (segundos override pro stage 'at') ou None. Chave: phone."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR REPLACE INTO pending_recovery_actions "
+        "(phone, kind, value, created_at) VALUES (?, ?, ?, ?)",
+        (phone, kind, value, int(time.time()))
+    )
+    conn.commit()
+    conn.close()
+
+
+def _pop_pending_recovery_action(phone: str):
+    """SELECT + DELETE atômico. Retorna (kind, value) ou (None, None) se
+    não houver entrada. Usa transação implícita do sqlite3 (begin no SELECT
+    via cursor compartilhado, commit no final) — mesma conexão pros dois
+    statements garante isolamento contra outro pop concorrente."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT kind, value FROM pending_recovery_actions WHERE phone = ?",
+        (phone,)
+    )
+    row = c.fetchone()
+    if row is None:
+        conn.close()
+        return (None, None)
+    c.execute("DELETE FROM pending_recovery_actions WHERE phone = ?", (phone,))
+    conn.commit()
+    conn.close()
+    return (row["kind"], row["value"])
 
 
 def commit_response(phone: str, sender_name: str, response: str):
@@ -1636,14 +1690,14 @@ def commit_response(phone: str, sender_name: str, response: str):
     schedule_price_followup, schedule_recovery). No-op para owner ou leads
     pausados."""
     if not response:
-        _pending_recovery_action.pop(phone, None)
+        _pop_pending_recovery_action(phone)
         return
     if is_owner(phone):
-        _pending_recovery_action.pop(phone, None)
+        _pop_pending_recovery_action(phone)
         return  # owner não tem fluxo de followup; modo teste é em memória
     lead_id = f"wa_{phone}"
     if is_lead_paused(lead_id):
-        _pending_recovery_action.pop(phone, None)
+        _pop_pending_recovery_action(phone)
         return  # lead pausado: humano assumiu
     add_message(lead_id, "assistant", response)
 
@@ -1658,7 +1712,7 @@ def commit_response(phone: str, sender_name: str, response: str):
 
     # Recovery: agenda próxima tentativa. OFF marca como desistido, AT usa
     # override (cliente pediu horário específico), default é cadência stage 0.
-    rec_kind, rec_value = _pending_recovery_action.pop(phone, (None, None))
+    rec_kind, rec_value = _pop_pending_recovery_action(phone)
     if rec_kind == 'off':
         mark_recovery_given_up(lead_id)
     elif rec_kind == 'at':

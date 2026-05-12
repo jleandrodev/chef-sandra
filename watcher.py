@@ -8,6 +8,7 @@ Execução: python3 watcher.py
 import json
 import time
 import logging
+import signal
 import traceback
 import urllib.request
 import urllib.error
@@ -701,12 +702,39 @@ def save_state(state: dict):
 
 # ── Loop principal ────────────────────────────────────────────────────────────
 
+# Flag de parada cooperativa. PM2 manda SIGINT/SIGTERM no `pm2 restart` e dá
+# ~1.6s antes de SIGKILL. Em vez de deixar o sinal interromper Python no meio
+# de uma chamada de OpenAI ou de um send_whatsapp (o que pode deixar o lead
+# recebendo mensagem sem histórico persistido, ou vice-versa), apenas sinalizamos
+# a flag e checamos ENTRE iterações — qualquer turno em andamento termina antes
+# do exit. Usamos lista de 1 elemento pra ser mutável dentro do handler sem
+# precisar de `nonlocal`/`global`.
+_SHOULD_STOP = [False]
+
+
+def _request_stop(signum, frame):
+    """Handler de SIGTERM/SIGINT. Apenas seta a flag — o loop principal
+    detecta no topo da próxima iteração e sai limpo. NÃO faz nada que possa
+    falhar (sem I/O, sem logging.error) pra não levantar dentro do handler."""
+    _SHOULD_STOP[0] = True
+
+
 def watch():
     init_db()
     logger.info("🔍 Watcher iniciado — Chef Sandra ativa (texto + áudio)")
     state = load_state()
 
+    # Signal handlers só rodam na main thread. O watcher não usa threads
+    # explícitas (todo o trabalho é serial neste loop), então o handler vai
+    # ser invocado de forma segura entre opcodes — não no meio de uma syscall
+    # de rede longa, mas garantidamente antes da próxima iteração do while.
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+
     while True:
+        if _SHOULD_STOP[0]:
+            logger.info("🛑 Recebido sinal de parada, finalizando após iteração atual")
+            break
         try:
             messages = fetch_messages(count=20)
             for msg in messages:
