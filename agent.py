@@ -69,14 +69,11 @@ RECOVERY_QUIET_HOURS_START = 22
 RECOVERY_QUIET_HOURS_END   = 8
 TIMEZONE                   = "America/Sao_Paulo"
 
-# Kill switch dos disparos automáticos. Quando False, o watcher NÃO envia
-# nenhum followup de link, followup de preço nem recovery — apenas
-# responde mensagens entrantes do cliente. Use False quando o número está
-# em restrição do WhatsApp (visto em 12/05/2026: número da Sandra foi
-# restrito pelo WA por volume + bug de mensagens repetidas; precisamos
-# parar de "pisar no acelerador" pra não virar ban permanente).
-# Pra reativar: editar pra True e reiniciar o watcher. Recomendado só
-# após restrição liftada + 24-48h de só responder mensagens entrantes.
+# Kill switch dos disparos automáticos no watcher. Mantido como defesa
+# em camadas, mas em 12/05/2026 o owner decidiu DESLIGAR permanentemente
+# o fluxo de followups + recovery na Sandra (commit_response não mais
+# agenda nada — ver nota lá). Esse kill switch fica como segunda barreira
+# caso alguém reintroduza scheduling sem perceber.
 DISPATCH_ENABLED = False
 
 OWNER_PHONE = "5544997317509"  # Número do dono — modo gerencial
@@ -1696,40 +1693,35 @@ def _pop_pending_recovery_action(phone: str):
 
 def commit_response(phone: str, sender_name: str, response: str):
     """Chamado pelo watcher APÓS confirmação de envio. Persiste a resposta no
-    histórico e dispara side-effects (mark_checkout, schedule_followup,
-    schedule_price_followup, schedule_recovery). No-op para owner ou leads
-    pausados."""
+    histórico e faz side-effects mínimos (mark_checkout). No-op para owner
+    ou leads pausados.
+
+    NOTA: agendamento de followups (link/preço) e de recovery foi REMOVIDO
+    em 12/05/2026 a pedido do owner — número da Sandra foi restrito pelo
+    WhatsApp por volume e o owner decidiu que esse fluxo NÃO terá mais
+    mensagens automáticas proativas. As funções schedule_followup,
+    schedule_price_followup, schedule_recovery e os helpers de cancel
+    seguem definidos no módulo (não foram apagados pra preservar histórico),
+    mas NÃO são chamados daqui. O kill switch DISPATCH_ENABLED no watcher
+    é defesa em camadas caso alguém reintroduza calls."""
+    # Sempre limpa qualquer action pendente do pop pra não acumular lixo
+    # mesmo agora que não agendamos recovery — markers do LLM seguem sendo
+    # extraídos pra não vazar no texto enviado ao cliente.
+    _pop_pending_recovery_action(phone)
     if not response:
-        _pop_pending_recovery_action(phone)
         return
     if is_owner(phone):
-        _pop_pending_recovery_action(phone)
         return  # owner não tem fluxo de followup; modo teste é em memória
     lead_id = f"wa_{phone}"
     if is_lead_paused(lead_id):
-        _pop_pending_recovery_action(phone)
         return  # lead pausado: humano assumiu
     add_message(lead_id, "assistant", response)
 
-    # Marcar checkout e agendar follow-up se qualquer link apareceu na resposta
+    # Marca checkout enviado pra liberar triggers pós-pago (entrega de
+    # PDFs etc) — não confunde com followup, que está desativado.
     if any(link in response for link in ALL_CHECKOUTS):
         if not _checkout_already_sent(lead_id):
             mark_checkout_sent(lead_id)
-        schedule_followup(lead_id, phone, sender_name)
-    elif _response_mentions_tier_price(response):
-        # PASO 5: preços apresentados sem link → followup de 30 min se não houver resposta
-        schedule_price_followup(lead_id, phone, sender_name)
-
-    # Recovery: agenda próxima tentativa. OFF marca como desistido, AT usa
-    # override (cliente pediu horário específico), default é cadência stage 0.
-    rec_kind, rec_value = _pop_pending_recovery_action(phone)
-    if rec_kind == 'off':
-        mark_recovery_given_up(lead_id)
-    elif rec_kind == 'at':
-        schedule_recovery(lead_id, phone, sender_name,
-                          override_seconds=rec_value, source='client_request')
-    else:
-        schedule_recovery(lead_id, phone, sender_name)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
