@@ -41,6 +41,7 @@ from agent import (handle_message, commit_response, init_db, AI_API_KEY,
                    get_pending_recoveries, advance_recovery,
                    generate_recovery_message, record_assistant_message,
                    _is_quiet_hour, _now_dt_in_tz,
+                   DISPATCH_ENABLED,
                    OWNER_PHONE,
                    _safe_first_name, _extract_name_from_history)
 from book_presentation import MEDIA_DISPATCH, CONTENT_DIR
@@ -864,6 +865,14 @@ def watch():
                         logger.error(f"Falha também ao notificar owner: {notify_err}")
 
             save_state(state)
+
+            # ── Kill switch global: se DISPATCH_ENABLED=False (definido em
+            # agent.py), pula TODO envio automático. Usado quando o número
+            # está em restrição do WhatsApp — só responder mensagens
+            # entrantes, nada de followup/recovery proativo.
+            if not DISPATCH_ENABLED:
+                time.sleep(POLL_INTERVAL)
+                continue
 
             # ── Quiet hours: bot não dispara nenhuma mensagem automática
             # (followup link/preço, recovery) entre 22h e 8h do fuso ops.

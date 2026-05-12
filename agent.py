@@ -69,6 +69,16 @@ RECOVERY_QUIET_HOURS_START = 22
 RECOVERY_QUIET_HOURS_END   = 8
 TIMEZONE                   = "America/Sao_Paulo"
 
+# Kill switch dos disparos automáticos. Quando False, o watcher NÃO envia
+# nenhum followup de link, followup de preço nem recovery — apenas
+# responde mensagens entrantes do cliente. Use False quando o número está
+# em restrição do WhatsApp (visto em 12/05/2026: número da Sandra foi
+# restrito pelo WA por volume + bug de mensagens repetidas; precisamos
+# parar de "pisar no acelerador" pra não virar ban permanente).
+# Pra reativar: editar pra True e reiniciar o watcher. Recomendado só
+# após restrição liftada + 24-48h de só responder mensagens entrantes.
+DISPATCH_ENABLED = False
+
 OWNER_PHONE = "5544997317509"  # Número do dono — modo gerencial
 
 PAYMENT_KEYWORDS = [
