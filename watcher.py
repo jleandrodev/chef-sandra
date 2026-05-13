@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 import sys
 sys.path.insert(0, str(Path.home() / "chef-sandra"))
-from agent import (handle_message, commit_response, init_db, AI_API_KEY,
+from agent import (handle_message, commit_response, init_db,
                    get_pending_followups, mark_followup_sent,
                    get_pending_price_followups, mark_price_followup_sent,
                    is_payment_confirmation, is_awaiting_files,
@@ -51,6 +51,10 @@ EVOLUTION_URL     = "http://localhost:8080"
 EVOLUTION_API_KEY = "aqYCBaeh-k_UL6-nbj0kKaKQxDSKkoPEi6rbBvtFsFY"
 INSTANCE_NAME     = "meu-agente"
 POLL_INTERVAL     = 3
+
+# Whisper só existe na OpenAI; mesmo quando AI_PROVIDER=deepseek, a transcrição
+# precisa da OPENAI_API_KEY. O .env de agent.py já foi carregado neste ponto.
+OPENAI_API_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
 
 STATE_FILE = Path.home() / "chef-sandra" / "watcher_state.json"
 
@@ -577,6 +581,10 @@ def download_audio_base64(raw_msg: dict):
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
     """Envia áudio para OpenAI Whisper e retorna transcrição."""
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY ausente — Whisper indisponível (DeepSeek não transcreve áudio).")
+        return None
+
     # Determina extensão pelo mime type
     ext_map = {
         "audio/ogg": ".ogg",
@@ -610,7 +618,7 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
             "https://api.openai.com/v1/audio/transcriptions",
             data=body,
             headers={
-                "Authorization": f"Bearer {AI_API_KEY}",
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
             },
             method="POST"
