@@ -41,12 +41,23 @@ _load_env_file(Path(__file__).parent / ".env")
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 
-AI_PROVIDER = "openai"
-AI_MODEL    = "gpt-4o-mini"
-AI_API_KEY  = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_API_KEY") or ""
+AI_PROVIDER = (os.environ.get("AI_PROVIDER") or "openai").strip().lower()
+AI_MODEL    = (os.environ.get("AI_MODEL") or "gpt-4o-mini").strip()
+
+_PROVIDER_DEFAULTS = {
+    "openai":   {"url": "https://api.openai.com/v1/chat/completions",   "key_env": "OPENAI_API_KEY"},
+    "deepseek": {"url": "https://api.deepseek.com/v1/chat/completions", "key_env": "DEEPSEEK_API_KEY"},
+}
+if AI_PROVIDER not in _PROVIDER_DEFAULTS:
+    raise RuntimeError(
+        f"AI_PROVIDER='{AI_PROVIDER}' não suportado. Use um de: {list(_PROVIDER_DEFAULTS)}"
+    )
+AI_API_URL = (os.environ.get("AI_API_URL") or _PROVIDER_DEFAULTS[AI_PROVIDER]["url"]).strip()
+_key_env   = _PROVIDER_DEFAULTS[AI_PROVIDER]["key_env"]
+AI_API_KEY = (os.environ.get(_key_env) or os.environ.get("AI_API_KEY") or "").strip()
 if not AI_API_KEY:
     raise RuntimeError(
-        "OPENAI_API_KEY não definida. Configure no .env (chef-sandra/.env) ou exporte no ambiente."
+        f"{_key_env} não definida. Configure no .env (chef-sandra/.env) ou exporte no ambiente."
     )
 
 CHECKOUT_BASIC   = "https://pay.hotmart.com/B105738743A?off=b06dsju5"  # $6.90  — contribuição básica
@@ -231,7 +242,7 @@ def call_ai(messages: list, max_tokens: int = 512, system: str = None,
     NÃO retornamos string de erro pro lead; isso vazaria mensagem técnica
     ('Lo siento, hubo un error técnico…') sem contexto e atrapalharia o funil.
     """
-    url = "https://api.openai.com/v1/chat/completions"
+    url = AI_API_URL
     if system is not None:
         sys_prompt = system
     else:
