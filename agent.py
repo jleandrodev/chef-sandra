@@ -5,6 +5,7 @@ Produto: Panadería Inteligente: Recetas Seguras para Diabéticos
 """
 
 import os
+import random
 import re
 import sys
 import json
@@ -939,6 +940,33 @@ def record_assistant_message(lead_id: str, content: str):
     """Append assistant message to history — usado pelo watcher quando envia
     mensagem de recovery gerada pelo LLM, pra que ela vire parte do histórico."""
     add_message(lead_id, "assistant", content)
+
+
+# ── Cold outreach templates ──────────────────────────────────────────────────
+#
+# Lista de variações pra abertura de conversa fria (1ª mensagem manual,
+# antes do lead responder qualquer coisa). Mesma intenção em todos
+# (saudação → identificação como Sandra → pergunta o nome, alinhado com
+# PASO 1 do playbook), mas vocabulário/estrutura/emoji variam pra reduzir
+# o padrão de "bot mandando bulk" que WhatsApp e leads detectam.
+#
+# Uso: nas próximas cold outreaches, em vez de mandar texto fixo,
+# importar pick_opener() e enviar o que ele devolver — cada lead vê uma
+# mensagem ligeiramente diferente.
+
+OPENING_TEMPLATES = [
+    "¡Hola! 😊 Soy la Chef Sandra. ¿Cómo te llamas?",
+    "Hola, ¿qué tal? 💚 Soy la Chef Sandra. ¿Cuál es tu nombre?",
+    "¡Buenas! Aquí Chef Sandra 🍞 ¿Con quién tengo el gusto?",
+    "Hola, amig@ 😊 Soy Sandra, la chef. Antes de seguir, ¿me dices tu nombre?",
+    "¡Hola! Soy la Chef Sandra 💚 Para empezar bien, ¿cómo te llamas?",
+    "Hola 👋 Soy Sandra. Antes de nada, ¿me dices cómo te llamas?",
+]
+
+
+def pick_opener() -> str:
+    """Devolve um opener aleatório de OPENING_TEMPLATES."""
+    return random.choice(OPENING_TEMPLATES)
 
 
 # ── Recoveries (cadência genérica de reengajamento de lead frio) ──────────────
