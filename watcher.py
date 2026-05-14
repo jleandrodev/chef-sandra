@@ -665,6 +665,20 @@ def _reaction_placeholder(message_content: dict) -> str:
     return f"[reaccionó con {emoji}]"
 
 
+def _sticker_placeholder(message_content: dict) -> str:
+    """Stickers do WhatsApp (stickerMessage) caem no ignore silencioso
+    igual reações antes do fix. A IA NÃO consegue ler a imagem do sticker
+    em si, mas no contexto de venda um sticker quase sempre vem como
+    'sim'/'concordo'/'gostei' (engagement positivo). Caso real 14/05/2026
+    — Eliana Vargas (+56983694815): Sandra perguntou '¿te muestro las
+    recetas?' e a Eliana respondeu com sticker, conversa estagnou.
+    Tratamos como engagement positivo e deixamos a IA tocar o playbook."""
+    sticker = message_content.get("stickerMessage")
+    if not isinstance(sticker, dict):
+        return ""
+    return "[envió un sticker — engagement positivo]"
+
+
 def extract_message_data(msg) -> dict:
     """Extrai dados da mensagem. Retorna text=None para áudios (processar separado)."""
     if not isinstance(msg, dict):
@@ -688,12 +702,14 @@ def extract_message_data(msg) -> dict:
     if not isinstance(message_content, dict):
         return {}
 
-    # Texto normal — ou placeholder de reação positiva (lead bateu emoji em
-    # vez de digitar; tratamos como "sí" implícito pra IA seguir o fluxo).
+    # Texto normal — ou placeholder de reação positiva / sticker (lead
+    # bateu emoji/sticker em vez de digitar; tratamos como "sí" implícito
+    # pra IA seguir o fluxo).
     text = (
         message_content.get("conversation") or
         (message_content.get("extendedTextMessage") or {}).get("text") or
         _reaction_placeholder(message_content) or
+        _sticker_placeholder(message_content) or
         ""
     )
 
