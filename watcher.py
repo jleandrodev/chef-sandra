@@ -638,6 +638,33 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
 
 # ── Extração de mensagens ─────────────────────────────────────────────────────
 
+# Reações positivas ao último envio do bot são tratadas como "sí" implícito:
+# o lead apertou um emoji em vez de digitar — o watcher injeta um placeholder
+# de user-message ([reaccionó con 👍]) pra a IA seguir o fluxo (ex: liberar
+# [[ENVIAR_LIBROS]] depois do "¿te muestro?"). Reações fora dessa whitelist
+# (negativas/ambíguas) seguem ignoradas em silêncio — comportamento legado.
+POSITIVE_REACTION_EMOJIS = {
+    "👍", "👌", "🙏",
+    "❤️", "❤", "🧡", "💛", "💚", "💙", "💜", "🤎", "🤍",
+    "💕", "💖", "💗", "💓", "💞", "💝",
+    "😀", "😃", "😄", "😁", "😆", "😊", "😍", "🥰", "😘",
+    "🤩", "😎", "🤗", "🤝",
+    "🎉", "🎊", "🔥", "⭐", "✨", "✅", "👏", "💪", "🚀",
+}
+
+
+def _reaction_placeholder(message_content: dict) -> str:
+    """Se a mensagem é uma reaction positiva, devolve placeholder em
+    espanhol pra IA tratar como confirmação. Caso contrário, string vazia."""
+    reaction = message_content.get("reactionMessage")
+    if not isinstance(reaction, dict):
+        return ""
+    emoji = (reaction.get("text") or "").strip()
+    if not emoji or emoji not in POSITIVE_REACTION_EMOJIS:
+        return ""
+    return f"[reaccionó con {emoji}]"
+
+
 def extract_message_data(msg) -> dict:
     """Extrai dados da mensagem. Retorna text=None para áudios (processar separado)."""
     if not isinstance(msg, dict):
@@ -661,10 +688,12 @@ def extract_message_data(msg) -> dict:
     if not isinstance(message_content, dict):
         return {}
 
-    # Texto normal
+    # Texto normal — ou placeholder de reação positiva (lead bateu emoji em
+    # vez de digitar; tratamos como "sí" implícito pra IA seguir o fluxo).
     text = (
         message_content.get("conversation") or
         (message_content.get("extendedTextMessage") or {}).get("text") or
+        _reaction_placeholder(message_content) or
         ""
     )
 
