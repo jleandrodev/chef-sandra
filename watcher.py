@@ -824,7 +824,14 @@ def watch():
                 # pagamento dispara a entrega normalmente.
                 purchase_trigger = None
                 if not is_lead_paused(lead_id):
-                    if text and is_payment_confirmation(text):
+                    # Os três gatilhos exigem _checkout_already_sent: caso
+                    # contrário "ya pagué" pode ser referência a OUTRA compra
+                    # (competidor, conta passada), não à nossa. Caso real
+                    # 14/05/2026 — Ana Luisa (+56923829830): "No porque ya
+                    # pagué $10.000 y nunca he ocupado ninguna receta" no
+                    # PASO 4, antes de receber o link, disparou entrega
+                    # fantasma dos 5 PDFs de graça.
+                    if text and is_payment_confirmation(text) and _checkout_already_sent(lead_id):
                         purchase_trigger = "payment_text"
                     elif text and is_awaiting_files(text) and _checkout_already_sent(lead_id):
                         purchase_trigger = "awaiting_files"
