@@ -90,11 +90,51 @@ DISPATCH_ENABLED = False
 
 OWNER_PHONE = "5544997317509"  # Número do dono — modo gerencial
 
+# Confirmação de pagamento — APENAS formas em pretérito de 1ª pessoa.
+# REMOVIDO: "pague" / "ya pague" (subjuntivo em ES: "para que él pague"
+# disparava entrega indevida — caso Mónica +598 em 17/05/2026).
+# REMOVIDO: "compré" / "comprei" soltos (matchavam dentro de "antes de
+# comprar", "no compré", etc).
 PAYMENT_KEYWORDS = [
-    "pagué", "ya pagué", "pague", "ya pague", "realicé el pago", "hice el pago",
-    "completé el pago", "finalicé el pago", "ya compré", "compré",
-    "paguei", "já paguei", "fiz o pagamento", "finalizei", "comprei",
-    "já comprei", "fiz a compra",
+    # ES — pretérito 1ª pessoa (inequívoco)
+    "pagué", "ya pagué", "acabo de pagar", "acabé de pagar",
+    "realicé el pago", "hice el pago", "completé el pago", "finalicé el pago",
+    "ya compré", "ya hice la compra", "ya transferí",
+    # PT — pretérito 1ª pessoa
+    "paguei", "já paguei", "acabei de pagar", "fiz o pagamento", "fiz o pix",
+    "transferi", "já transferi", "já comprei", "fiz a compra", "finalizei o pagamento",
+]
+
+# Padrões que indicam INTENÇÃO / FUTURO / 3ª pessoa / negação. Se qualquer
+# um aparecer no texto, `is_payment_confirmation` retorna False mesmo que
+# tenha matchado um keyword acima — evita disparar entrega quando o lead
+# está só anunciando que vai pagar, ou que terceiro vai pagar por ele.
+PAYMENT_INTENT_NEGATIVE = [
+    # ES — futuro / intenção / 3ª pessoa / subjuntivo / negação
+    "voy a pagar", "vamos a pagar", "iré a pagar", "iría a pagar",
+    "quiero pagar", "cuando pague", "si pago", "si pagara",
+    "antes de pagar", "para pagar", "para que pague",
+    "para que él pague", "para que ella pague",
+    "que él pague", "que ella pague", "que pague",
+    "le paso a", "le pasé a", "le pase a", "le mandé a", "le mande a",
+    "le pedí a", "le pedi a", "le dije a",
+    "mi hijo va a", "mi hija va a", "mi esposo va a", "mi esposa va a",
+    "mi marido va a", "mi pareja va a",
+    "va a pagar", "va a hacer el pago", "va a hacer el pix",
+    "después pago", "luego pago", "más tarde pago", "mañana pago",
+    "ahorita pago", "todavía no", "aún no", "no he pagado", "no pagué",
+    "estoy por pagar", "estoy pagando",
+    # PT — mesmas categorias
+    "vou pagar", "vou fazer o pix", "vou fazer o pagamento",
+    "vou transferir", "quero pagar", "quando pagar", "quando eu pagar",
+    "se pagar", "se eu pagar", "antes de pagar", "pra pagar",
+    "pra que pague", "para que pague",
+    "passei pra", "passei pro", "pedi pro", "pedi pra", "falei pro",
+    "falei pra", "disse pro", "disse pra",
+    "meu filho vai", "minha filha vai", "marido vai", "esposa vai",
+    "depois eu pago", "logo eu pago", "amanhã pago", "ainda vou",
+    "ainda não", "ainda não paguei", "não paguei",
+    "tô pagando", "estou pagando",
 ]
 
 # Lead pedindo os arquivos depois de já ter recebido o link de checkout —
@@ -1270,7 +1310,13 @@ def is_owner(phone: str) -> bool:
 
 
 def is_payment_confirmation(text: str) -> bool:
+    """True só se o texto afirma pagamento em pretérito 1ª pessoa E não
+    contém marcadores de intenção/futuro/3ª pessoa. Caso real Mónica
+    +598 17/05/2026: 'le pasé a mi hijo para que él pague el PIX' não é
+    confirmação — o filho ainda vai pagar."""
     t = text.lower()
+    if any(neg in t for neg in PAYMENT_INTENT_NEGATIVE):
+        return False
     return any(kw in t for kw in PAYMENT_KEYWORDS)
 
 
