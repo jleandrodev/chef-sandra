@@ -676,6 +676,8 @@ def init_db():
         "ALTER TABLE leads ADD COLUMN books_delivered INTEGER DEFAULT 0",
         "ALTER TABLE leads ADD COLUMN books_delivered_at INTEGER",
         "ALTER TABLE leads ADD COLUMN image_alert_sent INTEGER DEFAULT 0",
+        "ALTER TABLE leads ADD COLUMN pending_delivery INTEGER DEFAULT 0",
+        "ALTER TABLE leads ADD COLUMN pending_delivery_at INTEGER",
     ):
         try:
             c.execute(ddl)
@@ -1422,18 +1424,61 @@ def mark_books_delivered(lead_id: str):
 
 def reset_lead_delivery_state(lead_id: str):
     """Limpa flags que decidem auto-entrega: books_delivered, sent_checkout,
-    image_alert_sent. Usado quando o dono entra em /teste pra cada sessão de
-    teste começar limpa, e em troubleshooting de leads."""
+    image_alert_sent, pending_delivery. Usado quando o dono entra em /teste
+    pra cada sessão de teste começar limpa, e em troubleshooting de leads."""
     conn = _db()
     c = conn.cursor()
     c.execute(
         "UPDATE leads SET books_delivered = 0, books_delivered_at = NULL, "
-        "sent_checkout = 0, image_alert_sent = 0, updated_at = ? "
+        "sent_checkout = 0, image_alert_sent = 0, "
+        "pending_delivery = 0, pending_delivery_at = NULL, updated_at = ? "
         "WHERE id = ?",
         (datetime.now().isoformat(), lead_id)
     )
     conn.commit()
     conn.close()
+
+
+def enqueue_manual_delivery(lead_id: str):
+    """Marca lead como aguardando entrega manual disparada por /enviar-conteudo.
+    O watcher polia essa flag em cada iteração e dispara deliver_purchase."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE leads SET pending_delivery = 1, pending_delivery_at = ?, "
+        "updated_at = ? WHERE id = ?",
+        (int(time.time()), datetime.now().isoformat(), lead_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_pending_delivery(lead_id: str):
+    """Limpa a flag pending_delivery (após o watcher executar a entrega ou
+    quando descobre que já foi entregue)."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE leads SET pending_delivery = 0, updated_at = ? WHERE id = ?",
+        (datetime.now().isoformat(), lead_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_pending_manual_deliveries() -> list:
+    """Retorna leads com /enviar-conteudo enfileirado e ainda não entregue.
+    Usado pelo watcher pra disparar deliver_purchase fora do fluxo de inbox."""
+    conn = _db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, name, phone FROM leads "
+        "WHERE pending_delivery = 1 AND COALESCE(books_delivered, 0) = 0 "
+        "ORDER BY pending_delivery_at ASC"
+    )
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
 
 
 def has_image_alert_been_sent(lead_id: str) -> bool:
@@ -1539,6 +1584,10 @@ _OWNER_HELP = (
     "*/pausados*\n"
     "   Lista todos os leads pausados.\n"
     "\n"
+    "*📦 Entrega de conteúdo*\n"
+    "*/enviar-conteudo* _<número>_\n"
+    "   Após validar o pagamento, dispara o envio dos 5 PDFs ao lead.\n"
+    "\n"
     "_Aceita o número em qualquer formato:_ +55 44 9720-8122, 5544972081 22, etc.\n"
     "\n"
     "*ℹ️ Ajuda*\n"
@@ -1621,6 +1670,23 @@ def handle_owner_command(text: str) -> str:
         for l in leads:
             lines.append(f"  • {l['name'] or 'sem nome'} — +{l['phone']}")
         return "\n".join(lines)
+
+    if cmd in ("enviar-conteudo", "enviar_conteudo", "enviar-contenido",
+               "enviar_contenido", "enviar"):
+        digits = _normalize_phone(arg)
+        if not digits:
+            return (f"❌ Faltou o número. Ex: /{cmd} +55 44 9720-8122")
+        lead = _find_lead_by_phone(digits)
+        if not lead:
+            return f"❌ Lead não encontrado com o número {arg.strip()}."
+        if books_already_delivered(lead["id"]):
+            return (f"ℹ️  {lead['name'] or 'sem nome'} (+{lead['phone']}) já "
+                    "recebeu os 5 PDFs antes. Se realmente precisa reenviar, "
+                    "use /teste primeiro ou avise pra resetar manualmente.")
+        enqueue_manual_delivery(lead["id"])
+        return (f"📦 Disparando os 5 PDFs para "
+                f"{lead['name'] or 'sem nome'} (+{lead['phone']}). "
+                "Te aviso assim que terminar.")
 
     if cmd in ("pausar", "voltar", "retomar", "assumir", "despausar"):
         digits = _normalize_phone(arg)

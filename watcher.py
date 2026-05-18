@@ -40,6 +40,7 @@ from agent import (handle_message, commit_response, init_db,
                    is_lead_paused,
                    get_pending_recoveries, advance_recovery,
                    generate_recovery_message, record_assistant_message,
+                   get_pending_manual_deliveries, clear_pending_delivery,
                    _is_quiet_hour, _now_dt_in_tz,
                    DISPATCH_ENABLED,
                    OWNER_PHONE,
@@ -215,6 +216,29 @@ def notify_owner_wise_sent(client_name: str, client_phone: str, kind: str):
     )
     send_whatsapp(OWNER_PHONE, msg)
     logger.info(f"💸 Wise ({label}) — {client_phone} ({client_name or 'sem nome'})")
+
+
+def notify_owner_pending_validation(client_name: str, client_phone: str,
+                                    trigger: str, snippet: str = ""):
+    """Lead reivindicou pagamento — owner precisa validar manualmente.
+    Notifica a cada insistência (sem anti-spam). Owner responde com
+    /enviar-conteudo +<phone> quando confirmar o crédito."""
+    trigger_label = {
+        "payment_text":   "disse que pagou",
+        "awaiting_files": "pediu os livros",
+        "image_proof":    "enviou imagem (provável comprovante)",
+    }.get(trigger, trigger)
+    snippet_block = f"\nMensagem: _{snippet[:240]}_\n" if snippet else ""
+    msg = (
+        f"💰 *VALIDAR PAGAMENTO*\n\n"
+        f"Cliente: {client_name or 'sem nome'}\n"
+        f"Telefone: +{client_phone}\n"
+        f"Sinal: {trigger_label}{snippet_block}\n"
+        f"Quando confirmar o crédito, responda:\n"
+        f"`/enviar-conteudo +{client_phone}`"
+    )
+    send_whatsapp(OWNER_PHONE, msg)
+    logger.info(f"💰 Validação pendente — {client_phone} ({trigger})")
 
 
 def notify_owner_unexpected_image(client_name: str, client_phone: str):
@@ -790,6 +814,26 @@ def watch():
             logger.info("🛑 Recebido sinal de parada, finalizando após iteração atual")
             break
         try:
+            # ── Entregas manuais disparadas por /enviar-conteudo ─────────────
+            # Owner validou o pagamento e marcou pending_delivery=1 via
+            # comando WhatsApp. Aqui é onde a entrega real acontece — fora
+            # do fluxo de inbox pra ser independente da chegada de nova
+            # mensagem do lead.
+            for pending in get_pending_manual_deliveries():
+                p_lead_id = pending["id"]
+                p_phone   = pending["phone"]
+                p_name    = pending["name"] or ""
+                try:
+                    logger.info(f"📦 Entrega manual disparada por owner: {p_name} (+{p_phone})")
+                    deliver_purchase(p_phone, p_name, p_lead_id, trigger="owner_command")
+                except Exception as e:
+                    logger.error(f"Erro na entrega manual: {e}\n{traceback.format_exc()}")
+                finally:
+                    # Limpa a flag em qualquer cenário (deliver_purchase já
+                    # marcou books_delivered no caminho feliz; no erro
+                    # parcial o owner foi alertado e pode resetar manual).
+                    clear_pending_delivery(p_lead_id)
+
             messages = fetch_messages(count=20)
             for msg in messages:
                 msg_data = extract_message_data(msg)
@@ -826,18 +870,20 @@ def watch():
 
                 lead_id = f"wa_{phone}"
 
-                # ── Sinal de pós-pagamento (entrega determinística, ANTES da IA) ──
-                # Trust model: se o lead diz que pagou, ou pede os livros após o
-                # checkout, ou manda uma imagem (provável comprovante) após o
-                # checkout — entregamos os 5 PDFs e comemoramos a venda. O LLM é
-                # totalmente bypassado nesse turno pra evitar tentativas de revenda.
+                # ── Sinal de pós-pagamento (validação manual ANTES de entregar) ──
+                # Trust model atualizado (2026-05-18): NÃO entregamos mais os
+                # PDFs automaticamente. Quando o lead reivindica pagamento
+                # (texto, pedido de arquivos ou imagem após checkout), a Sandra
+                # responde uma mensagem de espera e notifica o owner. O owner
+                # valida o crédito na conta e dispara /enviar-conteudo +<phone>
+                # — esse comando enfileira a entrega real (deliver_purchase
+                # roda no loop de pending_deliveries logo no início do tick).
                 #
-                # IMPORTANTE: se o lead está pausado, NADA dispara automaticamente —
-                # o humano assumiu a conversa e pode estar fechando manualmente
-                # (ex: enviando chave PIX por privado). O cliente que disser
-                # "paguei" enquanto pausado vai cair no fluxo de paused (registra
-                # mensagem mas não responde). Quando despausar, mensagem nova de
-                # pagamento dispara a entrega normalmente.
+                # IMPORTANTE: se o lead está pausado, NADA dispara — o humano
+                # assumiu a conversa. O cliente que disser "paguei" enquanto
+                # pausado cai no fluxo de paused (registra mensagem mas não
+                # responde). Quando despausar, a próxima reivindicação aciona
+                # o fluxo normalmente.
                 purchase_trigger = None
                 if not is_lead_paused(lead_id):
                     # Os três gatilhos exigem _checkout_already_sent: caso
@@ -856,12 +902,23 @@ def watch():
 
                 if purchase_trigger and not books_already_delivered(lead_id):
                     user_msg = text if text else "(imagen recibida — comprobante de pago)"
-                    logger.info(f"💰 Sinal de venda ({purchase_trigger}) de {name} ({phone})")
+                    logger.info(f"💰 Sinal de venda ({purchase_trigger}) de {name} ({phone}) — aguardando validação do owner")
                     try:
                         add_message(lead_id, "user", user_msg)
-                        deliver_purchase(phone, name, lead_id, trigger=purchase_trigger)
+                        wait_msg = (
+                            "¡Genial! Estamos validando tu pago — en cuanto el "
+                            "equipo lo confirme te envío todo. ¡Gracias por la "
+                            "paciencia! 💚"
+                        )
+                        if send_whatsapp(phone, wait_msg):
+                            add_message(lead_id, "assistant", wait_msg)
+                        # Notifica owner a cada insistência (sem anti-spam) pra
+                        # ele não esquecer enquanto o crédito não cai.
+                        notify_owner_pending_validation(
+                            name, phone, purchase_trigger, snippet=user_msg
+                        )
                     except Exception as e:
-                        logger.error(f"Erro na entrega de livros: {e}\n{traceback.format_exc()}")
+                        logger.error(f"Erro no fluxo de validação pendente: {e}\n{traceback.format_exc()}")
                     continue
 
                 # Pagamento já confirmado antes (books_delivered=1) e o lead

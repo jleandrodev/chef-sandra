@@ -157,32 +157,41 @@ Sem ground truth de pagamento, o `outcome` cai 100% na inferência da
 skill (com viés). Quando ligar Kiwify/Stripe, ler
 `integrations/payments.py` — já tem o passo a passo completo.
 
-## Fluxo pós-pagamento (entrega automática + trust model)
+## Fluxo pós-pagamento (validação manual pelo owner)
 
-A partir do momento em que o lead dá QUALQUER sinal de que pagou ou está
-esperando os arquivos, o sistema entrega os 5 PDFs (`conteudo/libro1.pdf`
-… `libro5.pdf`) **automaticamente** e bypassa o LLM no turno. Decisão de
-produto: confiamos na palavra do cliente — nunca pedimos comprovante.
+A partir de 2026-05-18 a entrega NÃO é mais automática. Quando o lead
+reivindica pagamento, a Sandra responde uma mensagem de espera e
+notifica o owner; o owner valida o crédito na conta e dispara
+`/enviar-conteudo +<phone>` — só aí os 5 PDFs (`conteudo/libro1.pdf` …
+`libro5.pdf`) são entregues. Motivo da mudança: o auto-delivery estava
+disparando em conversas onde o lead só perguntou "consigo pagar por X?"
+e tomava como confirmação, gerando entregas prematuras (caso Jorge
++56983809852 / Mônica +59898257045 em 17–18/05).
 
 **Sinais detectados (em `watcher.py`, ANTES de chamar `handle_message`)**:
 
 | Trigger | Detector | Gate adicional |
 |---|---|---|
-| `payment_text` | `is_payment_confirmation(text)` — keywords explícitas ("ya pagué", "ya compré", etc.) | nenhum — confiamos sempre |
+| `payment_text` | `is_payment_confirmation(text)` — keywords explícitas ("ya pagué", "ya compré", etc.) | só dispara se `_checkout_already_sent(lead_id)` |
 | `awaiting_files` | `is_awaiting_files(text)` — pedidos do tipo "envíame los libros", "no me llegó nada" | só dispara se `_checkout_already_sent(lead_id)` |
 | `image_proof` | `extract_message_data` setou `is_image=True` | só dispara se `_checkout_already_sent(lead_id)` |
 
 Se algum trigger casar **e** `books_already_delivered(lead_id) == False`,
-roda `deliver_purchase()`:
+o watcher:
 
-1. Manda mensagem de agradecimento calorosa em ES (com primeiro nome via `_safe_first_name`).
-2. Envia os 5 PDFs com retry por arquivo (`_send_pdf_with_retry`, 3 tentativas, backoff 2s/4s).
-3. Marca `books_delivered=1` no banco.
-4. Notifica o dono via WhatsApp:
-   - `notify_owner_sale` se todos os PDFs subiram.
-   - `notify_owner_sale_partial_failure` se algum PDF falhou após retries — lista os arquivos pra envio manual.
+1. Manda ao lead a mensagem fixa de espera: _"¡Genial! Estamos validando tu pago — en cuanto el equipo lo confirme te envío todo. ¡Gracias por la paciencia! 💚"_.
+2. Chama `notify_owner_pending_validation(name, phone, trigger, snippet)` — alerta o owner com nome, telefone e instrução `/enviar-conteudo +<phone>`. Sem anti-spam: cada insistência do lead notifica de novo (decisão do owner em 18/05 — prefere ruído a esquecer).
+3. **NÃO marca `books_delivered`** — só o /enviar-conteudo faz isso (via `deliver_purchase`).
 
-**O LLM é totalmente bypassado nesse turno** — `handle_message` não roda. Isso evita revenda, pedido de comprovante, ou qualquer comportamento off-script da IA.
+**O LLM continua bypassado nesse turno** — `handle_message` não roda. A regra 13 do prompt (anti-revenda) segue valendo como defesa em profundidade caso o detector falhe.
+
+**Quando o owner dispara `/enviar-conteudo +<phone>`** (em `agent.py`):
+
+1. `handle_owner_command` chama `enqueue_manual_delivery(lead_id)` — marca `pending_delivery=1`.
+2. A próxima iteração do loop principal do watcher (a cada `POLL_INTERVAL = 3s`) chama `get_pending_manual_deliveries()`, executa `deliver_purchase()` em cada lead e limpa a flag com `clear_pending_delivery()`.
+3. `deliver_purchase()` envia agradecimento + 5 PDFs com retry + marca `books_delivered` + notifica owner (`notify_owner_sale` ou `notify_owner_sale_partial_failure`).
+
+Se o lead já tem `books_delivered=1`, o comando é bloqueado com mensagem de aviso (evita reentrega acidental). Para reenviar, owner precisa resetar manualmente via `reset_lead_delivery_state(lead_id)`.
 
 **Imagem sem checkout enviado**: o lead nunca recebeu link mas mandou foto.
 - Se `image_alert_sent=0` → manda `notify_owner_unexpected_image` (uma única vez por lead).
@@ -246,7 +255,8 @@ PM2 sair de cena. **Não rode os dois ao mesmo tempo.**
 
 | Evento | Função | Quando |
 |---|---|---|
-| 🎉 VENDA REALIZADA | `notify_owner_sale` | `deliver_purchase` enviou os 5 PDFs com sucesso |
+| 💰 VALIDAR PAGAMENTO | `notify_owner_pending_validation` | Lead reivindicou pagamento (texto/imagem/pedido de arquivos após checkout) — disparado a cada insistência |
+| 🎉 VENDA REALIZADA | `notify_owner_sale` | `deliver_purchase` enviou os 5 PDFs com sucesso (acionado pelo /enviar-conteudo) |
 | ⚠️ VENDA com falha parcial | `notify_owner_sale_partial_failure` | Algum PDF falhou após retries — lista o que precisa ir manual |
 | 🖼️ Imagem sem checkout | `notify_owner_unexpected_image` | Lead mandou imagem mas nunca recebeu link de pagamento (1x por lead) |
 | ⚠️ Falha ao responder lead | `notify_owner_send_failure` | `send_whatsapp` falhou em todos os retries — preview da mensagem incluído |
@@ -338,6 +348,15 @@ lista TARGETS por etapas. Cada lead recebe a mensagem de recuperação UMA
 única vez por ciclo de recovery.
 
 ## Histórico de mudanças relevantes
+
+### 2026-05-18 — Fim da auto-entrega: validação humana antes dos PDFs
+
+- **Auto-entrega removida**: o trigger de pagamento no `watcher.py` agora notifica o owner e responde uma mensagem de espera ao lead. `deliver_purchase` só roda quando o owner valida o crédito e dispara `/enviar-conteudo +<phone>`.
+- **Comando novo `/enviar-conteudo`** em `handle_owner_command` (`agent.py`): valida o número, busca o lead, bloqueia se `books_delivered=1`, marca `pending_delivery=1`. O loop principal do watcher checa essa flag a cada `POLL_INTERVAL` e dispara `deliver_purchase` fora do fluxo de inbox.
+- **Schema novo em `leads`**: `pending_delivery`, `pending_delivery_at`. Migração idempotente em `init_db`. `reset_lead_delivery_state` agora também limpa essas colunas.
+- **Notificação `notify_owner_pending_validation`**: alerta o owner sempre que um trigger de pagamento bate (sem anti-spam — preferência explícita do owner: ruído > esquecimento).
+- **Mensagem de espera ao lead** (constante no watcher): "_¡Genial! Estamos validando tu pago — en cuanto el equipo lo confirme te envío todo. ¡Gracias por la paciencia! 💚_".
+- **Caso que motivou**: 17–18/05 a Sandra entregou PDFs para Jorge (+56983809852) e Mônica (+59898257045) só por terem perguntado "consigo pagar com X?" — o detector interpretou como confirmação. Owner ficou no prejuízo. Trust model invertido: agora confiamos no owner, não no lead.
 
 ### 2026-05-06 (continuação) — Reset de teste + intercept pós-entrega
 
