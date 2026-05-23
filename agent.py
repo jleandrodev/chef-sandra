@@ -48,15 +48,12 @@ _PROVIDER_DEFAULTS = {
     "ollama":   {"url": "https://chat.homolog.live/v1/chat/completions",      "key_env": "OLLAMA_API_KEY"},
 }
 
-# Cascata padrão: Ollama self-hosted (chat.homolog.live) como primário,
-# Groq como fallback. Sem OpenAI/DeepSeek no chat — mas OPENAI_API_KEY
-# ainda é usada por watcher.transcribe_audio (Whisper), que não tem
-# equivalente local. Cada elemento é (provider_name, model); a ordem
-# manda — primeiro com chave válida é o primário, demais entram como
-# fallback em qualquer erro.
+# Provider único: Ollama self-hosted (chat.homolog.live). Sem fallback
+# externo — usuário revogou chaves Groq/OpenAI/DeepSeek. Se o Ollama
+# cair, o agente cai junto (responde mensagem canned). Cada elemento é
+# (provider_name, model).
 _DEFAULT_AI_CHAIN = [
     ("ollama", "llama3.2:3b"),
-    ("groq",   "llama-3.3-70b-versatile"),
 ]
 
 def _build_ai_chain() -> list:
@@ -299,7 +296,7 @@ Responde en el mismo idioma del mensaje recibido (español o portugués).
 # ── IA ────────────────────────────────────────────────────────────────────────
 
 def call_ai(messages: list, max_tokens: int = 512, system: str = None,
-            profile_slug: str = None, timeout: int = 30,
+            profile_slug: str = None, timeout: int = 180,
             response_format: dict = None, attempts: int = 3) -> str:
     """Chama Chat Completions com cascata de providers + retry no primário.
 
