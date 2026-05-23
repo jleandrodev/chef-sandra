@@ -53,9 +53,13 @@ EVOLUTION_API_KEY = "aqYCBaeh-k_UL6-nbj0kKaKQxDSKkoPEi6rbBvtFsFY"
 INSTANCE_NAME     = "meu-agente"
 POLL_INTERVAL     = 3
 
-# Whisper só existe na OpenAI; mesmo quando AI_PROVIDER=deepseek, a transcrição
-# precisa da OPENAI_API_KEY. O .env de agent.py já foi carregado neste ponto.
-OPENAI_API_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
+# Whisper self-hosted em chat.homolog.live (mesmo servidor do Ollama,
+# mesmo bearer). Substituiu a transcrição via api.openai.com — agora
+# zero dependência de chave OpenAI no chef-sandra. Travar `language`
+# acelera transcrição e melhora precisão (Chef Sandra atende em ES).
+OLLAMA_API_KEY    = (os.environ.get("OLLAMA_API_KEY") or "").strip()
+WHISPER_URL       = "https://chat.homolog.live/v1/audio/transcriptions"
+WHISPER_LANGUAGE  = (os.environ.get("LANGUAGE") or "es").strip().lower()[:2]
 
 STATE_FILE = Path.home() / "chef-sandra" / "watcher_state.json"
 
@@ -604,9 +608,9 @@ def download_audio_base64(raw_msg: dict):
 
 
 def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
-    """Envia áudio para OpenAI Whisper e retorna transcrição."""
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY ausente — Whisper indisponível (DeepSeek não transcreve áudio).")
+    """Envia áudio para Whisper self-hosted (chat.homolog.live)."""
+    if not OLLAMA_API_KEY:
+        logger.error("OLLAMA_API_KEY ausente — Whisper indisponível.")
         return None
 
     # Determina extensão pelo mime type
@@ -631,6 +635,8 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
 
         body_parts = []
         body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1".encode())
+        if WHISPER_LANGUAGE:
+            body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n{WHISPER_LANGUAGE}".encode())
         body_parts.append(
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: {mime_type}\r\n\r\n".encode()
             + audio_bytes
@@ -639,10 +645,10 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg"):
         body = b"\r\n".join(body_parts)
 
         req = urllib.request.Request(
-            "https://api.openai.com/v1/audio/transcriptions",
+            WHISPER_URL,
             data=body,
             headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Authorization": f"Bearer {OLLAMA_API_KEY}",
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
             },
             method="POST"

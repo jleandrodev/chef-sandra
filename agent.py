@@ -45,16 +45,18 @@ _PROVIDER_DEFAULTS = {
     "openai":   {"url": "https://api.openai.com/v1/chat/completions",         "key_env": "OPENAI_API_KEY"},
     "deepseek": {"url": "https://api.deepseek.com/v1/chat/completions",       "key_env": "DEEPSEEK_API_KEY"},
     "groq":     {"url": "https://api.groq.com/openai/v1/chat/completions",    "key_env": "GROQ_API_KEY"},
+    "ollama":   {"url": "https://chat.homolog.live/v1/chat/completions",      "key_env": "OLLAMA_API_KEY"},
 }
 
-# Cascata padrão: Groq primário (free tier $ → cai pra OpenAI quando estourar
-# rate limit) → OpenAI → DeepSeek como última camada. Cada elemento é
-# (provider_name, model). A ordem manda — primeiro provider com chave válida
-# é o primário, e em qualquer erro cai pro próximo.
+# Cascata padrão: Ollama self-hosted (chat.homolog.live) como primário,
+# Groq como fallback. Sem OpenAI/DeepSeek no chat — mas OPENAI_API_KEY
+# ainda é usada por watcher.transcribe_audio (Whisper), que não tem
+# equivalente local. Cada elemento é (provider_name, model); a ordem
+# manda — primeiro com chave válida é o primário, demais entram como
+# fallback em qualquer erro.
 _DEFAULT_AI_CHAIN = [
-    ("groq",     "llama-3.3-70b-versatile"),
-    ("openai",   "gpt-4.1-nano"),
-    ("deepseek", "deepseek-v4-flash"),
+    ("ollama", "llama3.2:3b"),
+    ("groq",   "llama-3.3-70b-versatile"),
 ]
 
 def _build_ai_chain() -> list:
