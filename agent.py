@@ -41,24 +41,49 @@ _load_env_file(Path(__file__).parent / ".env")
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 
-AI_PROVIDER = (os.environ.get("AI_PROVIDER") or "openai").strip().lower()
-AI_MODEL    = (os.environ.get("AI_MODEL") or "gpt-4o-mini").strip()
-
 _PROVIDER_DEFAULTS = {
-    "openai":   {"url": "https://api.openai.com/v1/chat/completions",   "key_env": "OPENAI_API_KEY"},
-    "deepseek": {"url": "https://api.deepseek.com/v1/chat/completions", "key_env": "DEEPSEEK_API_KEY"},
+    "openai":   {"url": "https://api.openai.com/v1/chat/completions",         "key_env": "OPENAI_API_KEY"},
+    "deepseek": {"url": "https://api.deepseek.com/v1/chat/completions",       "key_env": "DEEPSEEK_API_KEY"},
+    "groq":     {"url": "https://api.groq.com/openai/v1/chat/completions",    "key_env": "GROQ_API_KEY"},
 }
-if AI_PROVIDER not in _PROVIDER_DEFAULTS:
-    raise RuntimeError(
-        f"AI_PROVIDER='{AI_PROVIDER}' não suportado. Use um de: {list(_PROVIDER_DEFAULTS)}"
-    )
-AI_API_URL = (os.environ.get("AI_API_URL") or _PROVIDER_DEFAULTS[AI_PROVIDER]["url"]).strip()
-_key_env   = _PROVIDER_DEFAULTS[AI_PROVIDER]["key_env"]
-AI_API_KEY = (os.environ.get(_key_env) or os.environ.get("AI_API_KEY") or "").strip()
-if not AI_API_KEY:
-    raise RuntimeError(
-        f"{_key_env} não definida. Configure no .env (chef-sandra/.env) ou exporte no ambiente."
-    )
+
+# Cascata padrão: Groq primário (free tier $ → cai pra OpenAI quando estourar
+# rate limit) → OpenAI → DeepSeek como última camada. Cada elemento é
+# (provider_name, model). A ordem manda — primeiro provider com chave válida
+# é o primário, e em qualquer erro cai pro próximo.
+_DEFAULT_AI_CHAIN = [
+    ("groq",     "llama-3.3-70b-versatile"),
+    ("openai",   "gpt-4.1-nano"),
+    ("deepseek", "deepseek-v4-flash"),
+]
+
+def _build_ai_chain() -> list:
+    """Constrói a chain de providers, pulando os que não têm key no env."""
+    chain = []
+    for name, model in _DEFAULT_AI_CHAIN:
+        spec = _PROVIDER_DEFAULTS[name]
+        key  = (os.environ.get(spec["key_env"]) or "").strip()
+        if not key:
+            sys.stderr.write(
+                f"[agent] AVISO: {spec['key_env']} ausente — provider '{name}' não entra na cascata.\n"
+            )
+            continue
+        chain.append({"name": name, "model": model, "url": spec["url"], "api_key": key})
+    if not chain:
+        raise RuntimeError(
+            "Nenhum provider tem chave configurada. Defina GROQ_API_KEY, "
+            "OPENAI_API_KEY ou DEEPSEEK_API_KEY no .env."
+        )
+    return chain
+
+AI_PROVIDERS = _build_ai_chain()
+
+# Retrocompat: as constantes singulares apontam pro primário da cascata.
+# (Mantidas porque outros módulos do chef-sandra podem importar.)
+AI_PROVIDER = AI_PROVIDERS[0]["name"]
+AI_MODEL    = AI_PROVIDERS[0]["model"]
+AI_API_URL  = AI_PROVIDERS[0]["url"]
+AI_API_KEY  = AI_PROVIDERS[0]["api_key"]
 
 CHECKOUT_BASIC   = "https://pay.hotmart.com/B105738743A?off=b06dsju5"  # $6.90  — contribuição básica
 CHECKOUT_LITE    = "https://pay.hotmart.com/B105738743A?off=fu80jd8q"  # $7.90  — contribuição intermediária
@@ -274,70 +299,102 @@ Responde en el mismo idioma del mensaje recibido (español o portugués).
 def call_ai(messages: list, max_tokens: int = 512, system: str = None,
             profile_slug: str = None, timeout: int = 30,
             response_format: dict = None, attempts: int = 3) -> str:
-    """Chama OpenAI Chat Completions com retry+backoff para falhas transitórias.
+    """Chama Chat Completions com cascata de providers + retry no primário.
 
-    Retry em: timeout (socket.timeout), URLError, HTTPError 5xx/429.
-    Sem retry em: HTTPError 4xx (≠429) — erro permanente, não vai melhorar.
-    Esgotadas as tentativas, RAISE — o caller (watcher) decide se avisa o dono.
-    NÃO retornamos string de erro pro lead; isso vazaria mensagem técnica
-    ('Lo siento, hubo un error técnico…') sem contexto e atrapalharia o funil.
+    Para cada provider em AI_PROVIDERS (groq → openai → deepseek por padrão):
+      - Primário (idx=0): retry com backoff em transientes (5xx/429/timeout).
+      - Fallback (idx>0): 1 tentativa só; qualquer erro cai pro próximo.
+    Esgotada a cascata, RAISE — o caller (watcher) decide se avisa o dono.
+    NÃO retornamos string de erro pro lead.
+
+    O parâmetro `attempts` controla retry no primário em transientes; nos
+    fallbacks é sempre 1.
     """
-    url = AI_API_URL
     if system is not None:
         sys_prompt = system
     else:
         # Recompõe a cada chamada — permite editar playbook.md ou
         # profiles/*.md sem reiniciar o watcher.
         sys_prompt = build_system_prompt(profile_slug=profile_slug)
-    data = {
-        "model": AI_MODEL,
-        "messages": [{"role": "system", "content": sys_prompt}] + messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.7
-    }
-    if response_format:
-        data["response_format"] = response_format
-    headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    body = json.dumps(data).encode()
+    base_messages = [{"role": "system", "content": sys_prompt}] + messages
 
     last_err = None
-    for attempt in range(attempts):
-        # Recria o Request a cada attempt — urllib não reaproveita o handle
-        # se a chamada anterior consumiu o body stream.
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read())
-                return _sanitize(result["choices"][0]["message"]["content"])
-        except urllib.error.HTTPError as e:
-            last_err = e
-            transient = (e.code >= 500) or (e.code == 429)
-            if not transient:
-                # 4xx (auth, payload inválido, etc.) — não adianta retry.
-                _logger.error(f"OpenAI HTTP {e.code} (sem retry): {e}")
-                raise
-            if attempt < attempts - 1:
+    for idx, provider in enumerate(AI_PROVIDERS):
+        data = {
+            "model":       provider["model"],
+            "messages":    base_messages,
+            "max_tokens":  max_tokens,
+            "temperature": 0.7,
+        }
+        if response_format:
+            data["response_format"] = response_format
+        headers = {
+            "Authorization": f"Bearer {provider['api_key']}",
+            "Content-Type":  "application/json",
+            # Cloudflare na frente do Groq bloqueia UA default do urllib.
+            "User-Agent":    "chef-sandra/1.0",
+        }
+        body = json.dumps(data).encode()
+        # Retry com backoff só no primário em transientes; nos fallbacks é 1.
+        prov_attempts = attempts if idx == 0 else 1
+        fall_through = False
+        for attempt in range(prov_attempts):
+            req = urllib.request.Request(
+                provider["url"], data=body, headers=headers, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    result = json.loads(resp.read())
+                    return _sanitize(result["choices"][0]["message"]["content"])
+            except urllib.error.HTTPError as e:
+                last_err = e
+                transient = (e.code >= 500) or (e.code == 429)
+                if not transient or attempt == prov_attempts - 1:
+                    body_preview = ""
+                    try:
+                        body_preview = e.read().decode()[:200]
+                    except Exception:
+                        pass
+                    _logger.warning(
+                        f"{provider['name']} HTTP {e.code} ({provider['model']}) "
+                        f"— caindo pro fallback. body={body_preview}"
+                    )
+                    fall_through = True
+                    break
                 wait = 2 * (attempt + 1)
                 _logger.warning(
-                    f"↻ OpenAI HTTP {e.code} — retry em {wait}s "
-                    f"(tentativa {attempt + 2}/{attempts})"
+                    f"↻ {provider['name']} HTTP {e.code} — retry em {wait}s "
+                    f"(tentativa {attempt + 2}/{prov_attempts})"
                 )
                 time.sleep(wait)
-        except (socket.timeout, urllib.error.URLError, TimeoutError) as e:
-            last_err = e
-            if attempt < attempts - 1:
+            except (socket.timeout, urllib.error.URLError, TimeoutError) as e:
+                last_err = e
+                if attempt == prov_attempts - 1:
+                    _logger.warning(
+                        f"{provider['name']} timeout/URL error — caindo pro fallback: {e}"
+                    )
+                    fall_through = True
+                    break
                 wait = 2 * (attempt + 1)
                 _logger.warning(
-                    f"↻ OpenAI timeout/URL error — retry em {wait}s "
-                    f"(tentativa {attempt + 2}/{attempts}): {e}"
+                    f"↻ {provider['name']} timeout/URL error — retry em {wait}s "
+                    f"(tentativa {attempt + 2}/{prov_attempts}): {e}"
                 )
                 time.sleep(wait)
+            except Exception as e:
+                last_err = e
+                _logger.warning(
+                    f"{provider['name']} exception {type(e).__name__}: {e} "
+                    f"— caindo pro fallback"
+                )
+                fall_through = True
+                break
+        # Esgotou attempts ou caiu pro fallback — passa pro próximo provider.
+        if not fall_through:
+            continue
 
-    _logger.error(f"❌ OpenAI falhou após {attempts} tentativas: {last_err}")
-    raise RuntimeError(f"OpenAI unreachable after {attempts} attempts: {last_err}")
+    _logger.error(f"❌ Cascata esgotada (todos os providers falharam): {last_err}")
+    raise RuntimeError(f"All AI providers failed: {last_err}")
 
 
 def _sanitize(text: str) -> str:
